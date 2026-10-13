@@ -3515,7 +3515,7 @@ app.handleRegisterBusinessSubmit = async function(event) {
 
   let notifyResult = { ok: false };
   try {
-    const notifyResponse = await fetch('/api/business/register', {
+    const notifyResponse = await fetch('https://7dapp-notifications.lahirbueno.workers.dev/api/business/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
