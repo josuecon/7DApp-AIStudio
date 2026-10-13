@@ -1,5 +1,7 @@
+
 {
   "hosting": {
+    "site": "guia7d",
     "public": "public",
     "ignore": [
       "firebase.json",
@@ -8,11 +10,19 @@
     ],
     "rewrites": [
       {
-        "source": "/api/**",
-        "run": {
-          "serviceId": "7dapp-server",
-          "region": "us-central1"
-        }
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/sw.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
       }
     ]
   }
