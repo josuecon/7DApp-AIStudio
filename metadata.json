@@ -1,0 +1,6 @@
+{
+  "name": "7D App - Promociones Locales",
+  "description": "7D App - Las mejores ofertas y promociones de tu ciudad esta semana. Contacta directo por WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
