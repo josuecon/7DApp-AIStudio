@@ -1,4 +1,4 @@
-<escape>{
+{
   "hosting": {
     "site": "guia7d",
     "public": "public",
@@ -8,4 +8,4 @@
       "**/node_modules/**"
     ]
   }
-}</escape>
+}
