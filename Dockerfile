@@ -1,14 +1,16 @@
-FROM node:22-slim
+# Dockerfile para ejecución local o en contenedores (Cloud Run / VPS)
+# Nota: Firebase Hosting sirve directamente los archivos estáticos desde /public y no utiliza Docker.
+FROM node:22-alpine
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci --omit=dev
 
 COPY . .
 
-ENV NODE_ENV=production
+EXPOSE 3000
 
-EXPOSE 8080
+ENV NODE_ENV=production
 
 CMD ["npm", "start"]

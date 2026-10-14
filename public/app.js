@@ -53,6 +53,7 @@ const FIRESTORE_LEGACY_COLLECTION = 'Categorias de producto'; // Colección lega
 const FIRESTORE_COLLECTION = FIRESTORE_LEGACY_COLLECTION;
 const MAX_IMAGE_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 750 KB límite preventivo para proteger Firestore antes de R2
 const R2_UPLOAD_URL = 'https://7dapp-media-api.lahirbueno.workers.dev/upload';
+const NOTIFICATION_WORKER_URL = 'https://7dapp-notifications.lahirbueno.workers.dev/api/business/register';
 
 // ==========================================================================
 // 2. ESTADO GLOBAL DE LA APLICACIÓN Y DATOS INICIALES
@@ -748,21 +749,522 @@ app.showToast = function(message) {
   }, 3500);
 };
 
-app.executeShare = async function(title, text, url) {
-  const shareData = { title, text, url };
+// ==========================================================================
+// 8. SISTEMA AVANZADO DE COMPARTIR VISUAL (EMERALD SELECT & WEB SHARE API)
+// ==========================================================================
 
-  // 1. Intentar el menú típico nativo de compartir (Android / iOS / Web Share API)
+// Helper para dibujar rectángulos redondeados en Canvas
+function drawCanvasRoundRect(ctx, x, y, w, h, r) {
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    return;
+  }
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// Helper para dibujar texto multilínea con truncado seguro
+function drawCanvasWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 2) {
+  if (!text) return;
+  const words = text.split(/\s+/);
+  let line = '';
+  let count = 0;
+  for (let n = 0; n < words.length; n++) {
+    const testLine = line + words[n] + ' ';
+    const metrics = ctx.measureText(testLine);
+    if (metrics.width > maxWidth && n > 0) {
+      count++;
+      if (count >= maxLines) {
+        ctx.fillText(line.trim() + '...', x, y);
+        return;
+      }
+      ctx.fillText(line.trim(), x, y);
+      line = words[n] + ' ';
+      y += lineHeight;
+    } else {
+      line = testLine;
+    }
+  }
+  if (line.trim().length > 0 && count < maxLines) {
+    ctx.fillText(line.trim(), x, y);
+  }
+}
+
+// Cargar imagen de forma asíncrona para composición en canvas
+app.loadCanvasImage = function(src) {
+  return new Promise((resolve) => {
+    if (!src) return resolve(null);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => {
+      // Reintentar sin crossOrigin si el servidor no envía cabeceras CORS
+      const fallbackImg = new Image();
+      fallbackImg.onload = () => resolve(fallbackImg);
+      fallbackImg.onerror = () => resolve(null);
+      fallbackImg.src = src;
+    };
+    img.src = src;
+  });
+};
+
+// Convertir URL de imagen en objeto File para Web Share API
+app.fetchImageAsFile = async function(imageUrl, filename = 'imagen-7dapp.jpg') {
+  if (!imageUrl) return null;
+  try {
+    if (imageUrl.startsWith('data:')) {
+      const res = await fetch(imageUrl);
+      const blob = await res.blob();
+      return new File([blob], filename, { type: blob.type || 'image/jpeg' });
+    }
+    const res = await fetch(imageUrl, { mode: 'cors' });
+    if (!res.ok) throw new Error('HTTP error ' + res.status);
+    const blob = await res.blob();
+    return new File([blob], filename, { type: blob.type || 'image/jpeg' });
+  } catch (err) {
+    try {
+      const img = await app.loadCanvasImage(imageUrl);
+      if (img) {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth || img.width || 800;
+        c.height = img.naturalHeight || img.height || 800;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        return new Promise((resolve) => {
+          c.toBlob((blob) => {
+            if (blob) resolve(new File([blob], filename, { type: 'image/jpeg' }));
+            else resolve(null);
+          }, 'image/jpeg', 0.92);
+        });
+      }
+    } catch (e2) {}
+    return null;
+  }
+};
+
+// Generar tarjeta promocional visual de un Comercio en Canvas (Emerald Select)
+app.generateBusinessCardImage = async function(biz) {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 630;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // 1. Fondo base: Verde Bosque #101B18 con resplandor esmeralda
+    ctx.fillStyle = '#101B18';
+    ctx.fillRect(0, 0, 1200, 630);
+
+    const radialGlow = ctx.createRadialGradient(1000, 100, 20, 1000, 100, 500);
+    radialGlow.addColorStop(0, 'rgba(85, 201, 154, 0.18)');
+    radialGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = radialGlow;
+    ctx.fillRect(0, 0, 1200, 630);
+
+    // 2. Tarjeta contenedora: Verde Profundo #1C3029
+    const pad = 36;
+    const cardW = 1200 - pad * 2;
+    const cardH = 630 - pad * 2;
+    drawCanvasRoundRect(ctx, pad, pad, cardW, cardH, 28);
+    ctx.fillStyle = '#1C3029';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(85, 201, 154, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 3. Portada del comercio
+    const coverH = 240;
+    ctx.save();
+    drawCanvasRoundRect(ctx, pad, pad, cardW, coverH, 28);
+    ctx.clip();
+
+    let coverImg = null;
+    if (biz.coverUrl) {
+      coverImg = await app.loadCanvasImage(biz.coverUrl);
+    }
+    if (coverImg) {
+      ctx.drawImage(coverImg, pad, pad, cardW, coverH);
+    } else {
+      const coverGrad = ctx.createLinearGradient(pad, pad, pad + cardW, pad + coverH);
+      coverGrad.addColorStop(0, '#243D34');
+      coverGrad.addColorStop(0.5, '#1C3029');
+      coverGrad.addColorStop(1, '#152520');
+      ctx.fillStyle = coverGrad;
+      ctx.fillRect(pad, pad, cardW, coverH);
+
+      ctx.strokeStyle = 'rgba(85, 201, 154, 0.12)';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < cardW; i += 60) {
+        ctx.beginPath();
+        ctx.moveTo(pad + i, pad);
+        ctx.lineTo(pad + i + 120, pad + coverH);
+        ctx.stroke();
+      }
+    }
+
+    // Sombra protectora sobre la portada
+    const shadowGrad = ctx.createLinearGradient(pad, pad + coverH - 90, pad, pad + coverH);
+    shadowGrad.addColorStop(0, 'transparent');
+    shadowGrad.addColorStop(1, 'rgba(28, 48, 41, 0.95)');
+    ctx.fillStyle = shadowGrad;
+    ctx.fillRect(pad, pad + coverH - 90, cardW, 90);
+    ctx.restore();
+
+    // 4. Logotipo del comercio
+    const logoX = pad + 40;
+    const logoY = pad + coverH - 65;
+    const logoSize = 130;
+
+    ctx.save();
+    drawCanvasRoundRect(ctx, logoX, logoY, logoSize, logoSize, 22);
+    ctx.fillStyle = '#14231E';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 6;
+    ctx.fill();
+    ctx.restore();
+
+    let logoImg = null;
+    if (biz.logoUrl) {
+      logoImg = await app.loadCanvasImage(biz.logoUrl);
+    }
+    ctx.save();
+    drawCanvasRoundRect(ctx, logoX, logoY, logoSize, logoSize, 22);
+    ctx.clip();
+    if (logoImg) {
+      ctx.drawImage(logoImg, logoX, logoY, logoSize, logoSize);
+    } else {
+      ctx.fillStyle = '#243D34';
+      ctx.fillRect(logoX, logoY, logoSize, logoSize);
+      ctx.font = '56px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(biz.categoryIcon || '🏪', logoX + logoSize / 2, logoY + logoSize / 2);
+    }
+    ctx.restore();
+
+    drawCanvasRoundRect(ctx, logoX, logoY, logoSize, logoSize, 22);
+    ctx.strokeStyle = '#55C99A';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // 5. Textos y datos del comercio
+    const textX = logoX + logoSize + 32;
+    let textY = pad + coverH + 20;
+
+    // Nombre del comercio (Blanco Suave)
+    ctx.fillStyle = '#EAF4EF';
+    ctx.font = 'bold 38px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    const bizName = (biz.name || 'Comercio').slice(0, 36);
+    ctx.fillText(bizName, textX, textY);
+    textY += 46;
+
+    // Píldora de Categoría & Ciudad (Crema Cálido #F5E9C9)
+    const categoryText = `${biz.categoryIcon || '🏷️'} ${biz.categoryName || 'Comercio'} • 📍 ${biz.cityName || 'Venezuela'}`;
+    ctx.font = 'bold 18px "Plus Jakarta Sans", system-ui, sans-serif';
+    const badgeW = ctx.measureText(categoryText).width + 28;
+    const badgeH = 34;
+
+    drawCanvasRoundRect(ctx, textX, textY, badgeW, badgeH, 17);
+    ctx.fillStyle = 'rgba(85, 201, 154, 0.15)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(85, 201, 154, 0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = '#F5E9C9';
+    ctx.fillText(categoryText, textX + 14, textY + 8);
+    textY += 50;
+
+    // Descripción
+    ctx.fillStyle = '#9CB7AC';
+    ctx.font = '500 20px "Plus Jakarta Sans", system-ui, sans-serif';
+    const desc = biz.description || 'Comercio oficial verificado en 7D App. Consulta promociones activas y contacto directo.';
+    drawCanvasWrappedText(ctx, desc, textX, textY, cardW - (textX - pad) - 40, 28, 2);
+
+    // 6. Barra inferior institucional
+    const footerY = pad + cardH - 58;
+    ctx.strokeStyle = 'rgba(85, 201, 154, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad + 30, footerY);
+    ctx.lineTo(pad + cardW - 30, footerY);
+    ctx.stroke();
+
+    ctx.font = 'bold 17px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillStyle = '#EAF4EF';
+    ctx.fillText('✨ 7D App • Directorio Comercial de Venezuela', pad + 30, footerY + 18);
+
+    if (biz.hasDelivery) {
+      ctx.fillStyle = '#55C99A';
+      ctx.fillText('🛵 Delivery Disponible', pad + 480, footerY + 18);
+    }
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#55C99A';
+    ctx.font = 'bold 17px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillText('guia7d.web.app', pad + cardW - 30, footerY + 18);
+
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(new File([blob], `comercio-${biz.id || 'perfil'}.jpg`, { type: 'image/jpeg' }));
+        } else {
+          resolve(null);
+        }
+      }, 'image/jpeg', 0.92);
+    });
+  } catch (err) {
+    console.warn('[7D App] Error generando tarjeta de comercio en canvas:', err);
+    return null;
+  }
+};
+
+// Generar tarjeta promocional oficial de 7D App en Canvas (Emerald Select)
+app.generateAppPromoCardImage = async function() {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 630;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // 1. Fondo base: Verde Bosque #101B18 con ambiente luminoso
+    ctx.fillStyle = '#101B18';
+    ctx.fillRect(0, 0, 1200, 630);
+
+    const rad1 = ctx.createRadialGradient(250, 200, 20, 250, 200, 600);
+    rad1.addColorStop(0, 'rgba(85, 201, 154, 0.22)');
+    rad1.addColorStop(1, 'transparent');
+    ctx.fillStyle = rad1;
+    ctx.fillRect(0, 0, 1200, 630);
+
+    const rad2 = ctx.createRadialGradient(950, 450, 30, 950, 450, 500);
+    rad2.addColorStop(0, 'rgba(245, 233, 201, 0.08)');
+    rad2.addColorStop(1, 'transparent');
+    ctx.fillStyle = rad2;
+    ctx.fillRect(0, 0, 1200, 630);
+
+    // 2. Tarjeta contenedora con gradiente esmeralda
+    const pad = 36;
+    const cardW = 1200 - pad * 2;
+    const cardH = 630 - pad * 2;
+    drawCanvasRoundRect(ctx, pad, pad, cardW, cardH, 28);
+    const cardGrad = ctx.createLinearGradient(pad, pad, pad + cardW, pad + cardH);
+    cardGrad.addColorStop(0, '#1C3029');
+    cardGrad.addColorStop(1, '#12211C');
+    ctx.fillStyle = cardGrad;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(85, 201, 154, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 3. Emblema oficial de 7D App
+    const logoX = pad + 60;
+    const logoY = pad + 65;
+    const logoSize = 140;
+
+    let appIconImg = await app.loadCanvasImage('icons/icon-512.png');
+    if (!appIconImg) {
+      appIconImg = await app.loadCanvasImage('icons/icon.svg');
+    }
+
+    ctx.save();
+    drawCanvasRoundRect(ctx, logoX, logoY, logoSize, logoSize, 26);
+    ctx.fillStyle = '#14231E';
+    ctx.shadowColor = 'rgba(85, 201, 154, 0.35)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 6;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    drawCanvasRoundRect(ctx, logoX, logoY, logoSize, logoSize, 26);
+    ctx.clip();
+    if (appIconImg) {
+      ctx.drawImage(appIconImg, logoX, logoY, logoSize, logoSize);
+    } else {
+      ctx.fillStyle = '#1C3029';
+      ctx.fillRect(logoX, logoY, logoSize, logoSize);
+      ctx.font = 'bold 70px "Plus Jakarta Sans", system-ui, sans-serif';
+      ctx.fillStyle = '#55C99A';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('7D', logoX + logoSize / 2, logoY + logoSize / 2);
+    }
+    ctx.restore();
+
+    drawCanvasRoundRect(ctx, logoX, logoY, logoSize, logoSize, 26);
+    ctx.strokeStyle = '#55C99A';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // 4. Título y Subtítulo
+    const textX = logoX + logoSize + 40;
+    let textY = pad + 70;
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    const badgeText = '✨ PLATAFORMA OFICIAL DE PROMOCIONES';
+    ctx.font = 'bold 15px "Plus Jakarta Sans", system-ui, sans-serif';
+    const topBadgeW = ctx.measureText(badgeText).width + 24;
+    drawCanvasRoundRect(ctx, textX, textY, topBadgeW, 28, 14);
+    ctx.fillStyle = 'rgba(85, 201, 154, 0.16)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(85, 201, 154, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = '#55C99A';
+    ctx.fillText(badgeText, textX + 12, textY + 6);
+    textY += 40;
+
+    ctx.fillStyle = '#EAF4EF';
+    ctx.font = '900 52px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillText('7D App', textX, textY);
+    textY += 60;
+
+    ctx.fillStyle = '#F5E9C9';
+    ctx.font = 'bold 24px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillText('Promociones y Ofertas de la Semana', textX, textY);
+    textY += 36;
+
+    ctx.fillStyle = '#9CB7AC';
+    ctx.font = '500 21px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillText('Descubre lo mejor de tu ciudad. Contacto directo con comercios por WhatsApp.', textX, textY);
+
+    // 5. Píldoras de características
+    const pillsY = pad + 275;
+    const features = [
+      { icon: '🏷️', label: 'Ofertas Semanales', color: '#EAF4EF', bg: 'rgba(85, 201, 154, 0.15)' },
+      { icon: '🏬', label: 'Directorio Comercial', color: '#EAF4EF', bg: 'rgba(85, 201, 154, 0.15)' },
+      { icon: '💬', label: 'Trato Directo WhatsApp', color: '#25D366', bg: 'rgba(37, 211, 102, 0.18)' }
+    ];
+
+    let pillX = pad + 60;
+    features.forEach((feat) => {
+      ctx.font = 'bold 18px "Plus Jakarta Sans", system-ui, sans-serif';
+      const text = `${feat.icon} ${feat.label}`;
+      const fW = ctx.measureText(text).width + 32;
+      drawCanvasRoundRect(ctx, pillX, pillsY, fW, 44, 22);
+      ctx.fillStyle = feat.bg;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(85, 201, 154, 0.3)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = feat.color;
+      ctx.fillText(text, pillX + 16, pillsY + 12);
+      pillX += fW + 18;
+    });
+
+    // 6. Botón CTA
+    const btnY = pad + cardH - 120;
+    const btnX = pad + 60;
+    const btnW = cardW - 120;
+    const btnH = 68;
+
+    drawCanvasRoundRect(ctx, btnX, btnY, btnW, btnH, 34);
+    const btnGrad = ctx.createLinearGradient(btnX, btnY, btnX + btnW, btnY);
+    btnGrad.addColorStop(0, '#55C99A');
+    btnGrad.addColorStop(1, '#3DA67C');
+    ctx.fillStyle = btnGrad;
+    ctx.fill();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#0C1814';
+    ctx.font = '900 24px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillText('👉 Entra gratis a https://guia7d.web.app y descubre promociones', btnX + btnW / 2, btnY + 22);
+
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(new File([blob], '7dapp-promociones.jpg', { type: 'image/jpeg' }));
+        } else {
+          resolve(null);
+        }
+      }, 'image/jpeg', 0.92);
+    });
+  } catch (err) {
+    console.warn('[7D App] Error generando tarjeta de app en canvas:', err);
+    return null;
+  }
+};
+
+// ==========================================================================
+// 8.1 EJECUCIÓN PRINCIPAL DE COMPARTIR (Multi-Plataforma con Fallbacks)
+// ==========================================================================
+app.executeShare = async function(titleOrOptions, textParam, urlParam, fileParam = null) {
+  let title = '';
+  let fullText = '';
+  let shareUrl = '';
+  let imageFile = null;
+
+  if (typeof titleOrOptions === 'object' && titleOrOptions !== null) {
+    title = titleOrOptions.title || '';
+    fullText = titleOrOptions.text || '';
+    shareUrl = titleOrOptions.url || '';
+    imageFile = titleOrOptions.file || null;
+  } else {
+    title = titleOrOptions || '';
+    fullText = textParam || '';
+    shareUrl = urlParam || '';
+    imageFile = fileParam || null;
+  }
+
+  // 1. Si hay archivo de imagen y la Web Share API permite compartir archivos
+  if (imageFile && navigator.canShare) {
+    try {
+      const shareDataWithFile = {
+        title: title,
+        text: fullText,
+        files: [imageFile]
+      };
+      if (shareUrl) {
+        shareDataWithFile.url = shareUrl;
+      }
+      if (navigator.canShare(shareDataWithFile)) {
+        await navigator.share(shareDataWithFile);
+        return;
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') return; // Cancelado voluntariamente
+      console.warn('[7D App] Web Share con archivo no admitido, reintentando texto+url:', err);
+    }
+  }
+
+  // 2. Si no hay archivo o la plataforma no permite archivos en Web Share
   if (navigator.share) {
     try {
-      await navigator.share(shareData);
+      const shareDataTextOnly = {
+        title: title,
+        text: fullText
+      };
+      if (shareUrl) {
+        shareDataTextOnly.url = shareUrl;
+      }
+      await navigator.share(shareDataTextOnly);
       return;
     } catch (err) {
       if (err.name === 'AbortError') return; // Cancelado voluntariamente
     }
   }
 
-  // 2. Fallback: Copiar enlace al portapapeles con notificación Toast
-  const shareFullContent = `${text}\n${url}`;
+  // 3. Fallback: Copiar al portapapeles con notificación Toast
+  const shareFullContent = shareUrl ? `${fullText}\n${shareUrl}` : fullText;
   if (navigator.clipboard && navigator.clipboard.writeText) {
     try {
       await navigator.clipboard.writeText(shareFullContent);
@@ -771,29 +1273,65 @@ app.executeShare = async function(title, text, url) {
     } catch (e) {}
   }
 
-  // 3. Fallback alternativo directo
+  // 4. Fallback directo a WhatsApp Web / Móvil
   const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareFullContent)}`;
   window.open(waUrl, '_blank');
 };
 
-app.shareApp = function() {
-  const currentCity = (app.cities.find(c => c.id === app.currentCityId) || {}).name || 'nuestra ciudad';
-  const url = window.location.href.split('#')[0];
+// Compartir la Aplicación 7D App
+app.shareApp = async function() {
+  const currentCity = (app.cities.find(c => c.id === app.currentCityId) || {}).name || 'tu ciudad';
+  const url = 'https://guia7d.web.app';
   const title = '7D App - Promociones de la Semana';
-  const text = `🔥 ¡Mira las mejores promociones y ofertas semanales de ${currentCity} en 7D App!`;
-  app.executeShare(title, text, url);
+  const text = `✨ ¡Descubre las mejores promociones y comercios de la semana en ${currentCity} con 7D App!\n\n🛍️ Ofertas actualizadas, directorio de tiendas y contacto directo por WhatsApp:\n${url}`;
+
+  app.showToast('⏳ Preparando presentación visual...');
+  const cardFile = await app.generateAppPromoCardImage();
+
+  await app.executeShare({
+    title,
+    text,
+    url,
+    file: cardFile
+  });
 };
 
-app.sharePromo = function(promo) {
+// Compartir una Promoción / Oferta específica
+app.sharePromo = async function(promo) {
   if (!promo) {
     app.shareApp();
     return;
   }
   const cityName = (app.cities.find(c => c.id === promo.cityId) || {}).name || 'Venezuela';
-  const url = `${window.location.origin}${window.location.pathname}#promo=${promo.id}`;
-  const title = `${promo.businessName} - 7D App`;
-  const text = `🔥 ¡Mira esta promoción de ${promo.businessName} en ${cityName}: '${promo.title}'!`;
-  app.executeShare(title, text, url);
+  const bizName = promo.businessName ? promo.businessName.trim() : '';
+  const bizTag = bizName ? ` de ${bizName}` : '';
+  const locationTag = cityName ? ` en ${cityName}` : '';
+
+  const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://guia7d.web.app';
+  const pathname = window.location.pathname || '/';
+  const url = `${origin}${pathname}#promo=${promo.id}`;
+  const title = `${promo.title || 'Oferta'} | ${bizName || '7D App'}`;
+
+  let text = `🔥 ¡Oferta destacada${bizTag}${locationTag}!\n\n📌 ${promo.title || 'Promoción especial'}`;
+  if (promo.description) {
+    const cleanDesc = promo.description.length > 120 ? promo.description.slice(0, 117) + '...' : promo.description;
+    text += `\n💬 ${cleanDesc}`;
+  }
+  text += `\n\n✨ Mira todos los detalles y contacta directo al comercio en 7D App:\n${url}`;
+
+  let imageFile = null;
+  if (promo.imageUrl) {
+    app.showToast('⏳ Preparando imagen de la oferta...');
+    const filename = `oferta-${promo.id || 'flyer'}.jpg`;
+    imageFile = await app.fetchImageAsFile(promo.imageUrl, filename);
+  }
+
+  await app.executeShare({
+    title,
+    text,
+    url,
+    file: imageFile
+  });
 };
 
 app.shareCurrentPromo = function() {
@@ -813,6 +1351,109 @@ app.sharePromoById = function(promoId) {
     app.shareApp();
   }
 };
+
+// Compartir un Comercio / Ficha Comercial específica
+app.shareBusiness = async function(biz) {
+  if (!biz) {
+    app.shareApp();
+    return;
+  }
+  const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://guia7d.web.app';
+  const pathname = window.location.pathname || '/';
+  const url = `${origin}${pathname}#biz=${biz.id}`;
+  const title = `${biz.name} en 7D App`;
+
+  let text = `🏬 ¡Conoce a ${biz.name} en 7D App!`;
+  if (biz.categoryName) {
+    text += `\n🏷️ Categoría: ${biz.categoryName}`;
+  }
+  if (biz.cityName) {
+    text += `\n📍 Ciudad: ${biz.cityName}`;
+  }
+  if (biz.hasDelivery) {
+    text += `\n🛵 Delivery Disponible`;
+  }
+  text += `\n\n✨ Mira sus promociones activas, horarios y contacta directo por WhatsApp:\n${url}`;
+
+  app.showToast('⏳ Preparando ficha visual del comercio...');
+  const cardFile = await app.generateBusinessCardImage(biz);
+
+  await app.executeShare({
+    title,
+    text,
+    url,
+    file: cardFile
+  });
+};
+
+app.shareCurrentBusiness = function() {
+  if (app.currentBusiness) {
+    app.shareBusiness(app.currentBusiness);
+  } else {
+    app.shareApp();
+  }
+};
+
+app.shareBusinessById = function(bizId) {
+  const biz = (app.businesses || []).find(b => b.id === bizId);
+  if (biz) {
+    app.shareBusiness(biz);
+  } else {
+    app.shareApp();
+  }
+};
+
+// Navegación directa por Hash / Deep Links (#promo=ID, #biz=ID)
+app.handleDeepLink = function() {
+  try {
+    const hash = window.location.hash || '';
+    if (hash.startsWith('#promo=')) {
+      const promoId = hash.replace('#promo=', '').trim();
+      if (!promoId) return;
+      const promo = (app.promotions || []).find(p => p.id === promoId);
+      if (promo) {
+        app.openDetail(promoId);
+      } else {
+        let attempts = 0;
+        const interval = setInterval(() => {
+          attempts++;
+          const p = (app.promotions || []).find(x => x.id === promoId);
+          if (p) {
+            clearInterval(interval);
+            app.openDetail(promoId);
+          } else if (attempts >= 15) {
+            clearInterval(interval);
+          }
+        }, 300);
+      }
+    } else if (hash.startsWith('#biz=')) {
+      const bizId = hash.replace('#biz=', '').trim();
+      if (!bizId) return;
+      const biz = (app.businesses || []).find(b => b.id === bizId);
+      if (biz) {
+        app.openBusinessProfile(bizId);
+      } else {
+        let attempts = 0;
+        const interval = setInterval(() => {
+          attempts++;
+          const b = (app.businesses || []).find(x => x.id === bizId);
+          if (b) {
+            clearInterval(interval);
+            app.openBusinessProfile(bizId);
+          } else if (attempts >= 15) {
+            clearInterval(interval);
+          }
+        }, 300);
+      }
+    }
+  } catch (err) {
+    console.warn('[7D App] Error procesando enlace directo:', err);
+  }
+};
+
+window.addEventListener('hashchange', () => {
+  app.handleDeepLink();
+});
 
 app.openFullScreenImage = function() {
   const imgEl = document.getElementById('detail-image');
@@ -3039,7 +3680,12 @@ app.renderDirectory = function() {
         <p class="business-desc-clamp">${biz.description || 'Comercio verificado en 7D App.'}</p>
         <div class="business-card-footer">
           <span class="delivery-indicator">${biz.hasDelivery ? '🛵 Delivery disponible' : '🏬 Retiro en local'}</span>
-          <button type="button" class="business-view-btn" onclick="event.stopPropagation(); app.openBusinessProfile('${biz.id}')">Ver Ficha</button>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" class="promo-card-share-btn" onclick="event.stopPropagation(); app.shareBusinessById('${biz.id}')" title="Compartir comercio">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/></svg>
+            </button>
+            <button type="button" class="business-view-btn" onclick="event.stopPropagation(); app.openBusinessProfile('${biz.id}')">Ver Ficha</button>
+          </div>
         </div>
       </div>
     `;
@@ -3084,6 +3730,7 @@ app.setDirectoryCategoryFilter = function(catId) {
 app.openBusinessProfile = function(bizId) {
   const biz = (app.businesses || []).find(b => b.id === bizId);
   if (!biz) return;
+  app.currentBusiness = biz;
 
   const modal = document.getElementById('modal-business-profile');
   if (!modal) return;
@@ -3504,7 +4151,7 @@ app.handleRegisterBusinessSubmit = async function(event) {
     return;
   }
 
-  // 4. Envío automático de los datos privados del representante al backend seguro (/api/business/register -> Resend API)
+  // 4. Envío automático de los datos privados del representante (Cloudflare Worker -> Resend API)
   if (btnSubmit) btnSubmit.textContent = 'Notificando al administrador...';
 
   const representativeData = {
@@ -3514,18 +4161,36 @@ app.handleRegisterBusinessSubmit = async function(event) {
   };
 
   let notifyResult = { ok: false };
+  const notifyPayload = JSON.stringify({
+    business: publicBusinessData,
+    representative: representativeData
+  });
+
   try {
-    const notifyResponse = await fetch('https://7dapp-notifications.lahirbueno.workers.dev/api/business/register', {
+    // Intentar primero con el Worker de Cloudflare dedicado
+    let notifyResponse = await fetch(NOTIFICATION_WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        business: publicBusinessData,
-        representative: representativeData
-      })
-    });
-    notifyResult = await notifyResponse.json().catch(() => ({}));
+      body: notifyPayload
+    }).catch(() => null);
+
+    // Si el Worker no responde o falla de red, intentar con el endpoint local del servidor
+    if (!notifyResponse || !notifyResponse.ok) {
+      const fallbackResponse = await fetch('/api/business/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: notifyPayload
+      }).catch(() => null);
+      if (fallbackResponse) {
+        notifyResponse = fallbackResponse;
+      }
+    }
+
+    if (notifyResponse) {
+      notifyResult = await notifyResponse.json().catch(() => ({}));
+    }
   } catch (notifyErr) {
-    console.warn('[Backend] No se pudo conectar con el endpoint de notificación:', notifyErr);
+    console.warn('[Notificación] Error al contactar servicio de notificación:', notifyErr);
   }
 
   // 5. Actualización en memoria local para feedback inmediato del usuario
@@ -4391,7 +5056,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Iniciar escucha en tiempo real de Firestore
   app.initFirestoreSync();
 
-  
+  // Soporte para navegación directa por enlace (#promo=ID, #biz=ID)
+  app.handleDeepLink();
+
   // Soporte para Service Worker PWA
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
