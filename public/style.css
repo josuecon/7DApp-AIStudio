@@ -1535,6 +1535,81 @@ body {
   color: var(--text-secondary);
 }
 
+/* Botón destacado «Ver tienda» en la pantalla de detalle de publicación */
+#detail-store-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: #55C99A;
+  color: #101B18 !important;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  padding: 8px 16px;
+  min-height: 38px;
+  border-radius: 10px;
+  border: 1px solid #44BA8B;
+  box-shadow: 0 4px 14px rgba(85, 201, 154, 0.35);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+#detail-store-btn .store-icon {
+  font-size: 15px;
+  line-height: 1;
+  display: inline-block;
+}
+
+#detail-store-btn .store-arrow-icon {
+  width: 15px;
+  height: 15px;
+  color: #101B18;
+  stroke: #101B18;
+  display: inline-block;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+#detail-store-btn:hover {
+  background: #62D8A7;
+  color: #101B18 !important;
+  border-color: #55C99A;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(85, 201, 154, 0.45);
+}
+
+#detail-store-btn:hover .store-arrow-icon {
+  transform: translateX(3px);
+}
+
+#detail-store-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(85, 201, 154, 0.3);
+}
+
+@media (max-width: 480px) {
+  .detail-meta {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  
+  .detail-meta-actions {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  
+  #detail-store-btn {
+    padding: 7px 14px;
+    font-size: 12px;
+    min-height: 36px;
+  }
+}
+
 .detail-title {
   font-size: clamp(17px, 4.2vw, 22px);
   font-weight: 800;
