@@ -205,44 +205,289 @@ app.showScreen = function(screenName) {
 };
 
 // ==========================================================================
-// 4. RENDERIZADO DEL FEED DE PROMOCIONES Y CATEGORÍAS
 // ==========================================================================
-app.renderCategories = function() {
-  const container = document.getElementById('categories-container');
-  if (!container) return;
-  container.innerHTML = '';
+// 4. SISTEMA DE CATEGORÍAS, ICONOS VECTORIALES LUCIDE Y PANEL INFERIOR
+// ==========================================================================
 
-  const activeCategories = app.categories.filter(c => c.active !== false);
-  activeCategories.forEach(cat => {
-    const isSelected = app.currentCategoryId === cat.id;
-    const btn = document.createElement('button');
-    btn.className = `category-chip ${isSelected ? 'active' : ''}`;
-    btn.innerHTML = `<span style="font-size: 16px;">${cat.icon || '🏷️'}</span> <span>${cat.name}</span>`;
-    btn.onclick = () => {
-      app.currentCategoryId = cat.id;
-      const filterBadge = document.getElementById('active-filter-badge');
-      const filterText = document.getElementById('active-filter-text');
-      if (filterBadge && filterText) {
-        if (cat.id !== 'cat_todos') {
-          filterText.textContent = `${cat.icon || ''} ${cat.name}`;
-          filterBadge.style.display = 'inline-flex';
-        } else {
-          filterBadge.style.display = 'none';
-        }
-      }
-      app.renderCategories();
-      app.renderPromotions();
-    };
-    container.appendChild(btn);
-  });
+// Mapeo inteligente y normalizado de categorías a nombres de iconos oficiales de Lucide
+app.getCategoryLucideIcon = function(cat) {
+  if (!cat) return 'tag';
+  const name = ((typeof cat === 'string' ? cat : (cat.name || cat.id || '')) + '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  if (name.includes('todo')) return 'layers';
+  if (name.includes('comida') || name.includes('restaurante') || name.includes('gastronom') || name.includes('alimento') || name.includes('pizza') || name.includes('hamburguesa') || name.includes('sushi') || name.includes('arepa') || name.includes('pollo')) return 'utensils';
+  if (name.includes('tecnolog') || name.includes('movil') || name.includes('celular') || name.includes('telefono') || name.includes('comput') || name.includes('electron') || name.includes('gadget')) return 'smartphone';
+  if (name.includes('moda') || name.includes('calzado') || name.includes('ropa') || name.includes('vestir') || name.includes('zapato') || name.includes('boutique') || name.includes('textil')) return 'shirt';
+  if (name.includes('belleza') || name.includes('estetica') || name.includes('peluqueria') || name.includes('barber') || name.includes('spa') || name.includes('cosmet') || name.includes('manicur')) return 'sparkles';
+  if (name.includes('salud') || name.includes('medic') || name.includes('clinica') || name.includes('odontolog') || name.includes('dental')) return 'heart-pulse';
+  if (name.includes('farmacia') || name.includes('drogu')) return 'pill';
+  if (name.includes('auto') || name.includes('vehicul') || name.includes('carro') || name.includes('taller') || name.includes('moto') || name.includes('repuesto') || name.includes('mecanic') || name.includes('caucho')) return 'car-front';
+  if (name.includes('supermercado') || name.includes('viver') || name.includes('bodegon') || name.includes('mercado') || name.includes('abarrote') || name.includes('fruter')) return 'shopping-cart';
+  if (name.includes('hogar') || name.includes('casa') || name.includes('mueble') || name.includes('decoracion') || name.includes('inmobiliaria') || name.includes('ferreter')) return 'house';
+  if (name.includes('servicio') || name.includes('oficio') || name.includes('reparac') || name.includes('tecnico') || name.includes('mantenimiento') || name.includes('plomer') || name.includes('electric')) return 'wrench';
+  if (name.includes('mascota') || name.includes('veterin') || name.includes('perro') || name.includes('gato') || name.includes('animal')) return 'paw-print';
+  if (name.includes('cafe') || name.includes('panader') || name.includes('dulce') || name.includes('pasteler') || name.includes('reposteria')) return 'coffee';
+  if (name.includes('deporte') || name.includes('gym') || name.includes('gimnasio') || name.includes('fitness') || name.includes('ciclismo') || name.includes('entren')) return 'dumbbell';
+  if (name.includes('educac') || name.includes('libro') || name.includes('libreria') || name.includes('curso') || name.includes('escuela') || name.includes('papeler')) return 'book-open';
+  if (name.includes('licor') || name.includes('bebida') || name.includes('cerveza') || name.includes('bar') || name.includes('vinos')) return 'wine';
+  if (name.includes('viaje') || name.includes('turism') || name.includes('hotel') || name.includes('posada') || name.includes('vuelo')) return 'hotel';
+  if (name.includes('joya') || name.includes('reloj') || name.includes('accesorio') || name.includes('optica') || name.includes('lente')) return 'gem';
+  if (name.includes('evento') || name.includes('fiesta') || name.includes('entretenim') || name.includes('cine') || name.includes('musica')) return 'party-popper';
+
+  return 'tag';
 };
 
+// Generador de SVG Lucide ultra-resiliente (render inmediato en HTML + fallback para createIcons)
+app.createLucideSvgString = function(iconName, customClass, size) {
+  customClass = customClass || 'cat-lucide-icon';
+  size = size || 18;
+  const name = iconName || 'tag';
+
+  if (typeof window !== 'undefined' && window.lucide) {
+    const pascal = name.split('-').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+    const iconDef = window.lucide[pascal] || (window.lucide.icons && window.lucide.icons[pascal]);
+    if (iconDef && Array.isArray(iconDef)) {
+      const childrenHtml = iconDef.map(([tag, attrs]) => {
+        const attrStr = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ');
+        return `<${tag} ${attrStr}></${tag}>`;
+      }).join('');
+      return `<svg class="lucide lucide-${name} ${customClass}" xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${childrenHtml}</svg>`;
+    }
+  }
+
+  return `<i data-lucide="${name}" class="${customClass}" aria-hidden="true"></i>`;
+};
+
+// Refresco preventivo de iconos Lucide en el DOM
+app.refreshLucideIcons = function() {
+  if (typeof window !== 'undefined' && window.lucide && typeof window.lucide.createIcons === 'function') {
+    try {
+      window.lucide.createIcons();
+    } catch(err) {
+      console.warn('[Lucide] Error al refrescar iconos:', err);
+    }
+  }
+};
+
+// Obtener las 4 categorías destacadas elegidas por el administrador
+app.getFeaturedCategories = function() {
+  const allActiveCategories = (app.categories || []).filter(c => c.active !== false && c.id !== 'cat_todos');
+  const savedIds = app.settings && Array.isArray(app.settings.featuredCategoryIds)
+    ? app.settings.featuredCategoryIds
+    : null;
+
+  if (savedIds && savedIds.length > 0) {
+    // Mapear cada ID guardado a su categoría activa existente respetando el orden
+    const matched = savedIds
+      .map(id => allActiveCategories.find(c => c.id === id))
+      .filter(Boolean);
+
+    // Si las 4 categorías configuradas siguen activas, devolverlas exactamente en ese orden
+    if (matched.length === 4) {
+      return matched;
+    }
+
+    // Si alguna categoría configurada se desactivó o eliminó, completar con las restantes activas sin duplicar
+    if (matched.length > 0) {
+      const remaining = allActiveCategories.filter(c => !matched.some(m => m.id === c.id));
+      return [...matched, ...remaining].slice(0, 4);
+    }
+  }
+
+  // Inicialización segura por defecto: primeras 4 categorías activas
+  return allActiveCategories.slice(0, 4);
+};
+
+// Obtener los IDs guardados de las categorías destacadas (o los 4 primeros activos)
+app.getSavedFeaturedCategoryIds = function() {
+  const featured = app.getFeaturedCategories();
+  return featured.map(c => c.id);
+};
+
+// Renderizado de las 4 categorías principales en la portada con cuadrícula de 2 columnas
+app.renderCategories = function() {
+  const gridContainer = document.getElementById('categories-grid');
+  const legacyContainer = document.getElementById('categories-container');
+  const allBtn = document.getElementById('cat-filter-all-btn');
+  const viewAllBtn = document.getElementById('cat-btn-view-all');
+  const iconAll = document.getElementById('cat-icon-all');
+  const iconViewAll = document.getElementById('cat-icon-view-all');
+
+  // Actualizar icono en botón «Todas»
+  if (iconAll) {
+    iconAll.innerHTML = app.createLucideSvgString('layers', 'cat-pill-lucide', 16);
+  }
+
+  // Actualizar icono en botón «Ver todas»
+  if (iconViewAll) {
+    iconViewAll.innerHTML = app.createLucideSvgString('layout-grid', 'cat-pill-lucide', 16);
+  }
+
+  // Estado del botón «Todas»
+  const isAllSelected = (!app.currentCategoryId || app.currentCategoryId === 'cat_todos');
+  if (allBtn) {
+    allBtn.classList.toggle('active', isAllSelected);
+    allBtn.setAttribute('aria-pressed', isAllSelected ? 'true' : 'false');
+  }
+
+  // Obtener las 4 categorías principales según la selección ordenada del administrador
+  const mainCategories = app.getFeaturedCategories();
+
+  // Indicar en «Ver todas» si la categoría activa no está entre las 4 principales
+  const activeNotInMain = !isAllSelected && !mainCategories.some(c => c.id === app.currentCategoryId);
+  if (viewAllBtn) {
+    viewAllBtn.classList.toggle('active-filter-highlight', activeNotInMain);
+  }
+
+  if (gridContainer) {
+    gridContainer.innerHTML = '';
+    mainCategories.forEach(cat => {
+      const isSelected = app.currentCategoryId === cat.id;
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = `category-card ${isSelected ? 'active' : ''}`;
+      card.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+      card.title = `Filtrar por ${cat.name}`;
+
+      const iconName = app.getCategoryLucideIcon(cat);
+      const iconSvg = app.createLucideSvgString(iconName, 'cat-card-lucide', 18);
+
+      card.innerHTML = `
+        <span class="cat-card-icon">${iconSvg}</span>
+        <span class="cat-card-name">${cat.name}</span>
+      `;
+
+      card.onclick = () => {
+        app.selectCategory(cat.id);
+      };
+
+      gridContainer.appendChild(card);
+    });
+  }
+
+  // Compatibilidad con contenedor previo si estuviera presente
+  if (legacyContainer && !gridContainer) {
+    legacyContainer.innerHTML = '';
+    mainCategories.forEach(cat => {
+      const isSelected = app.currentCategoryId === cat.id;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `category-chip ${isSelected ? 'active' : ''}`;
+      btn.innerHTML = `${app.createLucideSvgString(app.getCategoryLucideIcon(cat), 'cat-chip-lucide', 16)} <span>${cat.name}</span>`;
+      btn.onclick = () => app.selectCategory(cat.id);
+      legacyContainer.appendChild(btn);
+    });
+  }
+
+  // Actualizar etiqueta del filtro activo en el subbar
+  const filterBadge = document.getElementById('active-filter-badge');
+  const filterText = document.getElementById('active-filter-text');
+  if (filterBadge && filterText) {
+    if (!isAllSelected) {
+      const activeCat = (app.categories || []).find(c => c.id === app.currentCategoryId);
+      const catName = activeCat ? activeCat.name : 'Categoría';
+      const catIcon = activeCat ? app.getCategoryLucideIcon(activeCat) : 'tag';
+      filterText.innerHTML = `${app.createLucideSvgString(catIcon, 'filter-badge-icon', 14)} <span>${catName}</span>`;
+      filterBadge.style.display = 'inline-flex';
+    } else {
+      filterBadge.style.display = 'none';
+    }
+  }
+
+  // Refrescar cualquier elemento Lucide adicional
+  app.refreshLucideIcons();
+};
+
+// Selección de categoría: actualiza estado, cierra panel y refresca feed
+app.selectCategory = function(catId) {
+  app.currentCategoryId = catId;
+  app.closeAllCategoriesSheet();
+  app.renderCategories();
+  app.renderPromotions();
+};
+
+// Quitar filtro de categoría (mostrar todas las promociones)
 app.clearCategoryFilter = function() {
   app.currentCategoryId = 'cat_todos';
   const filterBadge = document.getElementById('active-filter-badge');
   if (filterBadge) filterBadge.style.display = 'none';
+  app.closeAllCategoriesSheet();
   app.renderCategories();
   app.renderPromotions();
+};
+
+// Abrir el panel inferior con todas las categorías activas
+app.openAllCategoriesSheet = function() {
+  const modal = document.getElementById('modal-all-categories');
+  const listContainer = document.getElementById('all-categories-sheet-list');
+  const headerIcon = document.getElementById('sheet-header-icon');
+
+  if (headerIcon) {
+    headerIcon.innerHTML = app.createLucideSvgString('layout-grid', 'sheet-header-lucide', 20);
+  }
+
+  if (listContainer) {
+    listContainer.innerHTML = '';
+
+    const grid = document.createElement('div');
+    grid.className = 'categories-sheet-grid';
+
+    // Opción 1: «Todas las ofertas»
+    const isAllSelected = (!app.currentCategoryId || app.currentCategoryId === 'cat_todos');
+    const allCard = document.createElement('button');
+    allCard.type = 'button';
+    allCard.className = `category-card sheet-card ${isAllSelected ? 'active' : ''}`;
+    allCard.setAttribute('aria-pressed', isAllSelected ? 'true' : 'false');
+    allCard.innerHTML = `
+      <span class="cat-card-icon">${app.createLucideSvgString('layers', 'cat-card-lucide', 18)}</span>
+      <span class="cat-card-name">Todas las ofertas</span>
+    `;
+    allCard.onclick = () => {
+      app.clearCategoryFilter();
+    };
+    grid.appendChild(allCard);
+
+    // Todas las categorías activas registradas
+    const allActive = (app.categories || []).filter(c => c.active !== false && c.id !== 'cat_todos');
+    allActive.forEach(cat => {
+      const isSelected = app.currentCategoryId === cat.id;
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = `category-card sheet-card ${isSelected ? 'active' : ''}`;
+      card.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+      const iconName = app.getCategoryLucideIcon(cat);
+      card.innerHTML = `
+        <span class="cat-card-icon">${app.createLucideSvgString(iconName, 'cat-card-lucide', 18)}</span>
+        <span class="cat-card-name">${cat.name}</span>
+      `;
+      card.onclick = () => {
+        app.selectCategory(cat.id);
+      };
+      grid.appendChild(card);
+    });
+
+    listContainer.appendChild(grid);
+  }
+
+  if (modal) {
+    modal.classList.add('active');
+    document.body.classList.add('modal-open');
+  }
+
+  app.refreshLucideIcons();
+};
+
+// Cerrar el panel inferior de categorías
+app.closeAllCategoriesSheet = function() {
+  const modal = document.getElementById('modal-all-categories');
+  if (modal) {
+    modal.classList.remove('active');
+    document.body.classList.remove('modal-open');
+  }
 };
 
 app.getApprovedBusinessForPromo = function(promo) {
@@ -2963,9 +3208,244 @@ app.deleteCity = function(cityId) {
 };
 
 // ==========================================================================
-// 11. GESTIÓN DE CATEGORÍAS EN EL PANEL (CRUD & ACTIVAR / DESACTIVAR)
+// 11. GESTIÓN DE CATEGORÍAS EN EL PANEL (CRUD & CATEGORÍAS DESTACADAS)
 // ==========================================================================
+
+// Borrador temporal de las 4 categorías destacadas (en memoria del administrador)
+app.tempFeaturedCategoryIds = null;
+
+// Renderizar sección «Categorías destacadas» en el panel administrativo
+app.renderFeaturedCategoriesManager = function() {
+  const slotsContainer = document.getElementById('featured-slots-list');
+  const poolContainer = document.getElementById('featured-pool-list');
+  const statusPill = document.getElementById('featured-status-pill');
+  const countText = document.getElementById('featured-count-text');
+  const alertBox = document.getElementById('featured-alert-box');
+  const saveBtn = document.getElementById('btn-save-featured');
+
+  if (!slotsContainer || !poolContainer) return;
+
+  const allActiveCategories = (app.categories || []).filter(c => c.active !== false && c.id !== 'cat_todos');
+
+  // Inicializar borrador con la configuración guardada o la inicialización por defecto
+  if (!app.tempFeaturedCategoryIds) {
+    app.tempFeaturedCategoryIds = [...app.getSavedFeaturedCategoryIds()];
+  }
+
+  // Filtrar categorías que hayan dejado de existir o estén inactivas
+  app.tempFeaturedCategoryIds = app.tempFeaturedCategoryIds.filter(id =>
+    allActiveCategories.some(c => c.id === id)
+  );
+
+  const selectedCount = app.tempFeaturedCategoryIds.length;
+  const isComplete = selectedCount === 4;
+
+  // Actualizar etiqueta del contador
+  if (statusPill && countText) {
+    statusPill.className = `featured-badge-pill ${isComplete ? 'pill-success' : 'pill-warning'}`;
+    if (isComplete) {
+      countText.textContent = '4 de 4 seleccionadas ✓ Listo';
+    } else {
+      const missing = 4 - selectedCount;
+      countText.textContent = `${selectedCount} de 4 seleccionadas (Faltan ${missing})`;
+    }
+  }
+
+  // Mensaje de alerta / aviso informativo
+  if (alertBox) {
+    if (allActiveCategories.length < 4) {
+      alertBox.className = 'featured-alert alert-warning';
+      alertBox.style.display = 'block';
+      alertBox.innerHTML = `
+        <strong>⚠️ Aviso importante:</strong> Actualmente hay solo ${allActiveCategories.length} categorías activas en 7D App. 
+        Se requieren al menos 4 categorías activas para completar la cuadrícula de la portada. Puedes activar más categorías en la sección inferior.
+      `;
+    } else if (!isComplete) {
+      alertBox.className = 'featured-alert alert-info';
+      alertBox.style.display = 'block';
+      alertBox.innerHTML = `
+        ℹ️ Debes seleccionar exactamente <strong>4 categorías</strong> para guardar (actualmente tienes ${selectedCount}). 
+        Pulsa <strong>«＋ Agregar»</strong> en las categorías de abajo para completar los 4 espacios.
+      `;
+    } else {
+      alertBox.style.display = 'none';
+      alertBox.innerHTML = '';
+    }
+  }
+
+  // Deshabilitar botón si no hay 4 seleccionadas
+  if (saveBtn) {
+    const canSave = isComplete || (allActiveCategories.length < 4 && selectedCount === allActiveCategories.length);
+    saveBtn.disabled = !canSave;
+    saveBtn.style.opacity = canSave ? '1' : '0.6';
+    saveBtn.style.cursor = canSave ? 'pointer' : 'not-allowed';
+  }
+
+  // 1. RENDERIZAR LOS 4 SLOTS ORDENADOS (1 al 4)
+  slotsContainer.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    const catId = app.tempFeaturedCategoryIds[i];
+    const cat = catId ? allActiveCategories.find(c => c.id === catId) : null;
+    const slotCard = document.createElement('div');
+
+    if (cat) {
+      slotCard.className = 'featured-slot-item occupied';
+      const iconName = app.getCategoryLucideIcon(cat);
+      const iconSvg = app.createLucideSvgString(iconName, 'slot-lucide-icon', 20);
+
+      slotCard.innerHTML = `
+        <div class="slot-position-badge">#${i + 1}</div>
+        <div class="slot-cat-icon">${iconSvg}</div>
+        <div class="slot-cat-info">
+          <div class="slot-cat-name">${cat.name}</div>
+          <div class="slot-cat-sub">Posición #${i + 1} en portada</div>
+        </div>
+        <div class="slot-actions">
+          <button class="slot-btn btn-reorder" onclick="app.moveFeaturedCategory(${i}, -1)" ${i === 0 ? 'disabled' : ''} title="Subir orden" aria-label="Subir ${cat.name}">
+            ▲ Subir
+          </button>
+          <button class="slot-btn btn-reorder" onclick="app.moveFeaturedCategory(${i}, 1)" ${i === selectedCount - 1 ? 'disabled' : ''} title="Bajar orden" aria-label="Bajar ${cat.name}">
+            ▼ Bajar
+          </button>
+          <button class="slot-btn btn-remove" onclick="app.removeFeaturedCategory('${cat.id}')" title="Quitar de destacadas" aria-label="Quitar ${cat.name}">
+            ✕
+          </button>
+        </div>
+      `;
+    } else {
+      slotCard.className = 'featured-slot-item empty';
+      slotCard.innerHTML = `
+        <div class="slot-position-badge empty">#${i + 1}</div>
+        <div class="slot-empty-info">
+          <span>Espacio #${i + 1} disponible</span>
+          <small>Selecciona una categoría de la lista activa inferior</small>
+        </div>
+      `;
+    }
+    slotsContainer.appendChild(slotCard);
+  }
+
+  // 2. RENDERIZAR POOL DE CATEGORÍAS ACTIVAS
+  poolContainer.innerHTML = '';
+  allActiveCategories.forEach(cat => {
+    const isSelected = app.tempFeaturedCategoryIds.includes(cat.id);
+    const orderIndex = isSelected ? app.tempFeaturedCategoryIds.indexOf(cat.id) : -1;
+    const poolCard = document.createElement('div');
+    poolCard.className = `featured-pool-item ${isSelected ? 'selected' : ''}`;
+
+    const iconName = app.getCategoryLucideIcon(cat);
+    const iconSvg = app.createLucideSvgString(iconName, 'pool-lucide-icon', 18);
+
+    poolCard.innerHTML = `
+      <div class="pool-item-left">
+        <span class="pool-icon-wrap">${iconSvg}</span>
+        <div class="pool-name-wrap">
+          <span class="pool-cat-name">${cat.name}</span>
+          ${isSelected ? `<span class="pool-badge-selected">★ Destacada #${orderIndex + 1}</span>` : ''}
+        </div>
+      </div>
+      <div class="pool-item-right">
+        ${isSelected ? `
+          <button class="btn-pool-toggle remove" onclick="app.removeFeaturedCategory('${cat.id}')" title="Quitar de las destacadas">
+            Quitar ✕
+          </button>
+        ` : `
+          <button class="btn-pool-toggle add" onclick="app.addFeaturedCategory('${cat.id}')" ${selectedCount >= 4 ? 'disabled' : ''} title="${selectedCount >= 4 ? 'Ya seleccionaste 4' : 'Agregar a destacadas'}">
+            ＋ Agregar
+          </button>
+        `}
+      </div>
+    `;
+
+    poolContainer.appendChild(poolCard);
+  });
+
+  app.refreshLucideIcons();
+};
+
+app.moveFeaturedCategory = function(index, direction) {
+  if (!app.tempFeaturedCategoryIds) return;
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= app.tempFeaturedCategoryIds.length) return;
+
+  const item = app.tempFeaturedCategoryIds[index];
+  app.tempFeaturedCategoryIds[index] = app.tempFeaturedCategoryIds[newIndex];
+  app.tempFeaturedCategoryIds[newIndex] = item;
+
+  app.renderFeaturedCategoriesManager();
+};
+
+app.addFeaturedCategory = function(catId) {
+  if (!app.tempFeaturedCategoryIds) app.tempFeaturedCategoryIds = [];
+  if (app.tempFeaturedCategoryIds.includes(catId)) return;
+
+  if (app.tempFeaturedCategoryIds.length >= 4) {
+    app.showToast('Ya has seleccionado las 4 categorías. Quita una primero para agregar otra.');
+    return;
+  }
+
+  app.tempFeaturedCategoryIds.push(catId);
+  app.renderFeaturedCategoriesManager();
+};
+
+app.removeFeaturedCategory = function(catId) {
+  if (!app.tempFeaturedCategoryIds) return;
+  app.tempFeaturedCategoryIds = app.tempFeaturedCategoryIds.filter(id => id !== catId);
+  app.renderFeaturedCategoriesManager();
+};
+
+app.resetFeaturedCategoriesDraft = function() {
+  app.tempFeaturedCategoryIds = [...app.getSavedFeaturedCategoryIds()];
+  app.renderFeaturedCategoriesManager();
+  app.showToast('Borrador restablecido');
+};
+
+app.saveFeaturedCategories = function() {
+  if (!app.isAdminLoggedIn) {
+    app.showToast('Acceso denegado: solo los administradores pueden guardar cambios.');
+    return;
+  }
+
+  const allActiveCategories = (app.categories || []).filter(c => c.active !== false && c.id !== 'cat_todos');
+
+  if (allActiveCategories.length >= 4 && (!app.tempFeaturedCategoryIds || app.tempFeaturedCategoryIds.length !== 4)) {
+    const currentCount = app.tempFeaturedCategoryIds ? app.tempFeaturedCategoryIds.length : 0;
+    app.showToast(`Debes seleccionar exactamente 4 categorías destacadas (tienes ${currentCount}).`);
+    return;
+  }
+
+  // Establecer la nueva configuración en app.settings
+  app.settings.featuredCategoryIds = [...app.tempFeaturedCategoryIds];
+
+  // Guardar en localStorage como copia de seguridad local
+  try {
+    localStorage.setItem('7dapp_admin_settings', JSON.stringify(app.settings));
+  } catch(e) {}
+
+  // Guardar en Cloud Firestore en settings/general
+  if (db) {
+    db.collection(FIRESTORE_SETTINGS_COLLECTION)
+      .doc(FIRESTORE_SETTINGS_DOC)
+      .set({ featuredCategoryIds: app.settings.featuredCategoryIds }, { merge: true })
+      .then(() => {
+        console.log('[Firestore] Categorías destacadas guardadas exitosamente en settings/general:', app.settings.featuredCategoryIds);
+        app.showToast('¡Categorías destacadas guardadas con éxito!');
+      })
+      .catch((err) => {
+        console.error('[Firestore] Error al guardar categorías destacadas:', err);
+        app.showToast('Guardado localmente. Error en Firestore: ' + (err.message || ''));
+      });
+  } else {
+    app.showToast('Categorías destacadas guardadas (modo local)');
+  }
+
+  // Refrescar inmediatamente la portada y el gestor
+  app.renderCategories();
+  app.renderFeaturedCategoriesManager();
+};
+
 app.renderAdminCategories = function() {
+  app.renderFeaturedCategoriesManager();
   const container = document.getElementById('admin-categories-list');
   if (!container) return;
   container.innerHTML = '';
@@ -3246,6 +3726,10 @@ app.detectNearestCity();
           var heroBadge = document.querySelector('.hero-badge'); if (heroBadge) heroBadge.textContent = String.fromCodePoint(0x1F525) + ' ANÚNCIATE HOY POR ' + durationDays + ' DÍAS';
           var pricingHeadline = document.querySelector('.pricing-headline'); if (pricingHeadline) pricingHeadline.textContent = 'PUBLICA DURANTE ' + durationDays + ' DÍAS';
           app.updatePublishSelects();
+          app.renderCategories();
+          if (app.isAdminLoggedIn && typeof app.renderFeaturedCategoriesManager === 'function') {
+            app.renderFeaturedCategoriesManager();
+          }
           console.log('[Firestore] Configuración general sincronizada desde settings/general');
         }
       }, (err) => {
@@ -5356,6 +5840,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Soporte para navegación directa por enlace (#promo=ID, #biz=ID)
   app.handleDeepLink();
+
+  // Soporte para tecla Escape en modales y paneles
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' || e.key === 'Esc') {
+      const catSheet = document.getElementById('modal-all-categories');
+      if (catSheet && catSheet.classList.contains('active')) {
+        app.closeAllCategoriesSheet();
+      }
+    }
+  });
+
+  // Refrescar iconos Lucide tras carga inicial
+  app.refreshLucideIcons();
 
   // Soporte para Service Worker PWA
   if ('serviceWorker' in navigator) {

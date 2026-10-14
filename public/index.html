@@ -33,6 +33,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   
+  <!-- Biblioteca de iconos vectoriales Lucide (Carga local ultra-rápida y fallback resiliente) -->
+  <script src="lucide.min.js"></script>
+  <script>
+    if (typeof lucide === 'undefined') {
+      var s = document.createElement('script');
+      s.src = 'https://unpkg.com/lucide@latest/dist/umd/lucide.min.js';
+      document.head.appendChild(s);
+    }
+  </script>
+
   <!-- Firebase SDK v10 (compat for clean bundle-free browser execution) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -52,7 +62,7 @@
           <img class="brand-badge" src="icons/icon.svg" alt="7D" />
           <div class="brand-text">
             <span class="brand-name">7D App</span>
-            <span class="brand-tagline">Promociones de la semana</span>
+            <span class="brand-tagline">El Catálogo de tu ciudad</span>
           </div>
         </div>
         
@@ -63,7 +73,7 @@
             <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
           </button>
           
-          <button class="icon-btn" onclick="app.openAdminModal()" title="Panel de Administración">
+          <button class="icon-btn header-admin-btn" onclick="app.openAdminModal()" title="Panel de Administración" aria-label="Panel de Administración">
             <svg class="icon" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
           </button>
         </div>
@@ -105,10 +115,20 @@
           </div>
         </div>
 
-        <!-- Category Horizontal Slider -->
-        <div class="categories-bar">
-          <div class="categories-scroll" id="categories-container">
-            <!-- Dynamically populated categories -->
+        <!-- Main Screen Categories: Compact 2-column Grid & Lucide Integration -->
+        <div class="categories-section" id="categories-section">
+          <div class="categories-toolbar">
+            <button class="cat-pill-all active" id="cat-filter-all-btn" onclick="app.clearCategoryFilter()" title="Mostrar todas las promociones" aria-label="Mostrar todas las promociones">
+              <span class="cat-pill-icon" id="cat-icon-all"></span>
+              <span class="cat-pill-label">Todas</span>
+            </button>
+            <button class="cat-pill-view-all" id="cat-btn-view-all" onclick="app.openAllCategoriesSheet()" title="Ver todas las categorías" aria-label="Abrir panel con todas las categorías">
+              <span class="cat-pill-label">Ver todas</span>
+              <span class="cat-pill-icon" id="cat-icon-view-all"></span>
+            </button>
+          </div>
+          <div class="categories-compact-grid" id="categories-grid">
+            <!-- Dynamically populated with first 4 active categories -->
           </div>
         </div>
 
@@ -891,8 +911,60 @@
 
           <!-- TAB 5: GESTIÓN DE CATEGORÍAS -->
           <div id="admin-tab-categories" class="admin-tab-pane">
+
+            <!-- SECCIÓN: CATEGORÍAS DESTACADAS EN PORTADA -->
+            <div class="admin-featured-card">
+              <div class="admin-featured-header">
+                <div>
+                  <div class="admin-featured-title-row">
+                    <span class="admin-featured-star">⭐</span>
+                    <h3 class="admin-featured-title">Categorías destacadas</h3>
+                  </div>
+                  <p class="admin-featured-desc">
+                    Elige exactamente cuatro categorías activas y define el orden en que aparecerán en la pantalla principal.
+                  </p>
+                </div>
+                <div class="featured-badge-pill" id="featured-status-pill">
+                  <span id="featured-count-text">4 de 4 seleccionadas</span>
+                </div>
+              </div>
+
+              <!-- Lista ordenada de las 4 categorías seleccionadas (Slots 1 a 4 con botones Subir / Bajar / Quitar) -->
+              <div class="featured-slots-container">
+                <div class="featured-slots-label">
+                  <span>Orden de aparición en la portada (1 al 4):</span>
+                </div>
+                <div id="featured-slots-list" class="featured-slots-list">
+                  <!-- Dynamically populated 4 slots -->
+                </div>
+              </div>
+
+              <!-- Selector interactivo de categorías activas disponibles -->
+              <div class="featured-pool-container">
+                <div class="featured-pool-label">
+                  <span>Todas las categorías activas (pulsa para agregar o quitar de las 4 destacadas):</span>
+                </div>
+                <div id="featured-pool-list" class="featured-pool-grid">
+                  <!-- Dynamically populated active categories -->
+                </div>
+              </div>
+
+              <!-- Aviso o alertas -->
+              <div id="featured-alert-box" class="featured-alert" style="display: none;"></div>
+
+              <!-- Acciones de guardar / descartar -->
+              <div class="featured-actions-row">
+                <button class="btn btn-primary" id="btn-save-featured" onclick="app.saveFeaturedCategories()">
+                  <span>💾 Guardar cambios</span>
+                </button>
+                <button class="btn btn-secondary" onclick="app.resetFeaturedCategoriesDraft()">
+                  <span>Descartar cambios</span>
+                </button>
+              </div>
+            </div>
+
             <!-- Formulario agregar nueva categoría -->
-            <div class="admin-entity-form">
+            <div class="admin-entity-form" style="margin-top: 24px;">
               <h4><span>🏷️</span> Agregar Nueva Categoría</h4>
               <div class="form-row">
                 <div class="form-group flex-1">
@@ -1106,6 +1178,26 @@
         </p>
         <div class="sheet-body" id="cities-modal-list">
           <!-- Dynamically populated cities -->
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: All Categories Bottom Sheet (Lucide Integrated) -->
+    <div id="modal-all-categories" class="modal-overlay modal-bottom-sheet-overlay" onclick="app.closeAllCategoriesSheet()">
+      <div class="bottom-sheet categories-sheet" onclick="event.stopPropagation()">
+        <div class="sheet-drag-handle" aria-hidden="true"></div>
+        <div class="sheet-header">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="sheet-icon-wrap" id="sheet-header-icon"></span>
+            <h3 style="font-size: 20px; font-weight: 900; color: #FFFFFF;">Todas las categorías</h3>
+          </div>
+          <button class="icon-btn sheet-close-btn" onclick="app.closeAllCategoriesSheet()" title="Cerrar" aria-label="Cerrar panel de categorías">✕</button>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 14px;">
+          Elige una categoría para filtrar las ofertas y promociones vigentes:
+        </p>
+        <div class="sheet-body categories-sheet-body" id="all-categories-sheet-list">
+          <!-- Dynamically populated with all active categories -->
         </div>
       </div>
     </div>
