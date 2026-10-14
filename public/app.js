@@ -138,7 +138,8 @@ promotionsLoaded: false,
   tempBizCover: null,
   tempBizLogoFile: null,
   tempBizCoverFile: null,
-  businesses: []
+  businesses: [],
+  currentStatsYearMonth: null
 };
 
 // Exponer app en window para eventos HTML
@@ -2219,25 +2220,322 @@ app.renderAdminDashboard = function() {
 
   // Ranking de clics
   const rankingList = document.getElementById('clicks-ranking-container');
-  if (!rankingList) return;
-  rankingList.innerHTML = '';
-
-  const sorted = [...app.promotions].sort((a, b) => (b.whatsappClicks || 0) - (a.whatsappClicks || 0)).slice(0, 5);
-  sorted.forEach((p, idx) => {
-    const row = document.createElement('div');
-    row.className = 'ranking-item';
-    row.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <span class="ranking-pos">#${idx + 1}</span>
-        <div>
-          <div style="font-weight: 700; color: #FFFFFF; font-size: 13px;">${p.businessName}</div>
-          <div style="font-size: 11px; color: var(--text-muted);">${p.title}</div>
+  if (rankingList) {
+    rankingList.innerHTML = '';
+    const sorted = [...app.promotions].sort((a, b) => (b.whatsappClicks || 0) - (a.whatsappClicks || 0)).slice(0, 5);
+    sorted.forEach((p, idx) => {
+      const row = document.createElement('div');
+      row.className = 'ranking-item';
+      row.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="ranking-pos">#${idx + 1}</span>
+          <div>
+            <div style="font-weight: 700; color: #FFFFFF; font-size: 13px;">${p.businessName}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">${p.title}</div>
+          </div>
         </div>
-      </div>
-      <span class="badge" style="background: rgba(244, 63, 94, 0.15); color: #F43F5E; font-weight: 800;">${p.whatsappClicks || 0} clics</span>
-    `;
-    rankingList.appendChild(row);
+        <span class="badge" style="background: rgba(244, 63, 94, 0.15); color: #F43F5E; font-weight: 800;">${p.whatsappClicks || 0} clics</span>
+      `;
+      rankingList.appendChild(row);
+    });
+  }
+
+  // Renderizar sección de Estadísticas Mensuales
+  app.renderMonthlyStats();
+};
+
+// ==========================================================================
+// ESTADÍSTICAS MENSUALES DEL PANEL ADMINISTRATIVO
+// ==========================================================================
+const STATS_SPANISH_MONTHS = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
+
+app.formatStatsMonthLabel = function(ymString) {
+  if (!ymString || typeof ymString !== 'string') return '';
+  const parts = ymString.split('-');
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (isNaN(y) || isNaN(m) || m < 1 || m > 12) return ymString;
+  return `${STATS_SPANISH_MONTHS[m - 1]} ${y}`;
+};
+
+app.getStatsAvailableMonths = function() {
+  const monthsSet = new Set();
+  const now = new Date();
+
+  // Siempre ofrecer al menos los últimos 12 meses
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    monthsSet.add(`${y}-${m}`);
+  }
+
+  // Incorporar meses históricos detectados en promociones
+  (app.promotions || []).forEach(p => {
+    const rawTime = p.approvedAt ?? p.fechaAprobacion ?? p.createdAt;
+    if (rawTime !== undefined && rawTime !== null && rawTime !== '') {
+      let ms = null;
+      if (typeof rawTime === 'number') {
+        ms = rawTime < 1e11 ? rawTime * 1000 : rawTime;
+      } else if (typeof rawTime.toMillis === 'function') {
+        ms = rawTime.toMillis();
+      } else if (typeof rawTime.toDate === 'function') {
+        ms = rawTime.toDate().getTime();
+      } else if (typeof rawTime.seconds === 'number') {
+        ms = rawTime.seconds * 1000;
+      } else if (typeof rawTime === 'string') {
+        const parsed = Date.parse(rawTime);
+        if (!isNaN(parsed)) ms = parsed;
+      }
+      if (ms && !isNaN(ms)) {
+        const d = new Date(ms);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        monthsSet.add(`${y}-${m}`);
+      }
+    }
   });
+
+  if (app.currentStatsYearMonth) {
+    monthsSet.add(app.currentStatsYearMonth);
+  }
+
+  return Array.from(monthsSet).sort().reverse();
+};
+
+app.changeStatsMonth = function(val) {
+  if (val) {
+    app.currentStatsYearMonth = val;
+    app.renderMonthlyStats();
+  }
+};
+
+app.navigateStatsMonth = function(direction) {
+  const available = app.getStatsAvailableMonths();
+  if (!available || available.length === 0) return;
+
+  const current = app.currentStatsYearMonth || available[0];
+  let idx = available.indexOf(current);
+  if (idx === -1) idx = 0;
+
+  // direction -1 = mes anterior (más antiguo, mayor índice en orden descendente)
+  // direction +1 = mes siguiente (más nuevo, menor índice en orden descendente)
+  const targetIdx = idx - direction;
+  if (targetIdx >= 0 && targetIdx < available.length) {
+    app.currentStatsYearMonth = available[targetIdx];
+    app.renderMonthlyStats();
+  }
+};
+
+app.renderMonthlyStats = function() {
+  const container = document.getElementById('admin-monthly-stats-section');
+  if (!container) return;
+
+  const availableMonths = app.getStatsAvailableMonths();
+  if (!app.currentStatsYearMonth) {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = String(now.getMonth() + 1).padStart(2, '0');
+    app.currentStatsYearMonth = `${curYear}-${curMonth}`;
+  }
+
+  // Poblar selector desplegable de mes y año
+  const monthSelect = document.getElementById('stats-month-select');
+  if (monthSelect) {
+    monthSelect.innerHTML = availableMonths.map(ym => {
+      const label = app.formatStatsMonthLabel(ym);
+      const isSelected = (ym === app.currentStatsYearMonth) ? 'selected' : '';
+      return `<option value="${ym}" ${isSelected}>${label}</option>`;
+    }).join('');
+  }
+
+  // Actualizar estado habilitado/deshabilitado de los botones ◀ y ▶
+  const currentIdx = availableMonths.indexOf(app.currentStatsYearMonth);
+  const prevBtn = container.querySelector('.btn-stats-nav[title="Mes anterior"]');
+  const nextBtn = container.querySelector('.btn-stats-nav[title="Mes siguiente"]');
+  if (prevBtn) {
+    const isOldest = (currentIdx >= availableMonths.length - 1);
+    prevBtn.disabled = isOldest;
+    prevBtn.style.opacity = isOldest ? '0.35' : '1';
+    prevBtn.style.cursor = isOldest ? 'not-allowed' : 'pointer';
+  }
+  if (nextBtn) {
+    const isNewest = (currentIdx <= 0);
+    nextBtn.disabled = isNewest;
+    nextBtn.style.opacity = isNewest ? '0.35' : '1';
+    nextBtn.style.cursor = isNewest ? 'not-allowed' : 'pointer';
+  }
+
+  // Límites temporales del mes seleccionado (tiempo local)
+  const parts = app.currentStatsYearMonth.split('-');
+  const selYear = parseInt(parts[0], 10);
+  const selMonth = parseInt(parts[1], 10); // 1 a 12
+
+  const startOfMonth = new Date(selYear, selMonth - 1, 1, 0, 0, 0, 0).getTime();
+  const endOfMonth = new Date(selYear, selMonth, 0, 23, 59, 59, 999).getTime();
+
+  // Estados negativos que descartan aprobación definitiva
+  const negativeStatuses = [
+    'pending', 'pending_approval', 'pendiente', 'revision',
+    'rejected', 'rechazado', 'rechazada'
+  ];
+
+  const approvedThisMonth = [];
+  let missingPriceCount = 0;
+  let totalIncome = 0;
+
+  (app.promotions || []).forEach(p => {
+    if (!p) return;
+    const rawStatus = String(p.status || p.estado || '').toLowerCase().trim();
+    if (negativeStatuses.includes(rawStatus)) {
+      // Excluir pendientes y rechazadas
+      return;
+    }
+
+    // Fecha real de aprobación: approvedAt (o equivalente histórico fechaAprobacion)
+    const rawApp = p.approvedAt ?? p.fechaAprobacion;
+    let appTime = null;
+    if (rawApp !== undefined && rawApp !== null && rawApp !== '') {
+      if (typeof rawApp === 'number') {
+        appTime = rawApp < 1e11 ? rawApp * 1000 : rawApp;
+      } else if (typeof rawApp.toMillis === 'function') {
+        appTime = rawApp.toMillis();
+      } else if (typeof rawApp.toDate === 'function') {
+        appTime = rawApp.toDate().getTime();
+      } else if (typeof rawApp.seconds === 'number') {
+        appTime = rawApp.seconds * 1000;
+      } else if (typeof rawApp === 'string') {
+        const parsed = Date.parse(rawApp);
+        if (!isNaN(parsed)) appTime = parsed;
+      }
+    }
+
+    // Solo se consideran registros con fecha de aprobación comprobable
+    if (appTime === null) {
+      return;
+    }
+
+    // Verificar si la aprobación ocurrió durante el mes seleccionado
+    if (appTime >= startOfMonth && appTime <= endOfMonth) {
+      let promoPrice = null;
+      if (typeof p.price === 'number' && !isNaN(p.price) && p.price >= 0) {
+        promoPrice = p.price;
+      } else if (typeof p.price === 'string' && p.price.trim() !== '') {
+        const parsed = parseFloat(p.price);
+        if (!isNaN(parsed) && parsed >= 0) promoPrice = parsed;
+      }
+
+      if (promoPrice !== null) {
+        totalIncome += promoPrice;
+      } else {
+        missingPriceCount++;
+      }
+
+      approvedThisMonth.push({
+        ...p,
+        _appTime: appTime,
+        _parsedPrice: promoPrice
+      });
+    }
+  });
+
+  // Ordenar aprobaciones por fecha descendente (más recientes primero)
+  approvedThisMonth.sort((a, b) => b._appTime - a._appTime);
+
+  // 1. Indicador: Publicaciones aprobadas del mes
+  const elPromos = document.getElementById('monthly-stat-promos');
+  if (elPromos) {
+    elPromos.textContent = approvedThisMonth.length;
+  }
+
+  // 2. Indicador: Ingresos del mes (USD)
+  const elIncome = document.getElementById('monthly-stat-income');
+  if (elIncome) {
+    elIncome.innerHTML = `$${totalIncome.toFixed(2)} <span class="currency-tag">USD</span>`;
+  }
+
+  // 3. Advertencia de registros sin precio
+  const warningEl = document.getElementById('monthly-stats-warning');
+  if (warningEl) {
+    if (missingPriceCount > 0) {
+      warningEl.style.display = 'flex';
+      warningEl.innerHTML = `
+        <span class="stats-warning-icon">⚠️</span>
+        <div class="stats-warning-content">
+          <strong>Advertencia de datos:</strong> Se detectaron <strong>${missingPriceCount}</strong> publicación(es) aprobada(s) en este mes sin el campo <code>price</code> registrado en Firestore. El total de ingresos ($${totalIncome.toFixed(2)} USD) solo incluye los registros con importe verificado.
+        </div>
+      `;
+    } else {
+      warningEl.style.display = 'none';
+      warningEl.innerHTML = '';
+    }
+  }
+
+  // 4. Detalle y listado de publicaciones aprobadas del mes
+  const countEl = document.getElementById('monthly-breakdown-count');
+  if (countEl) {
+    countEl.textContent = `${approvedThisMonth.length} ${approvedThisMonth.length === 1 ? 'publicación' : 'publicaciones'}`;
+  }
+
+  const listEl = document.getElementById('monthly-stats-list');
+  if (listEl) {
+    if (approvedThisMonth.length === 0) {
+      const monthLabel = app.formatStatsMonthLabel(app.currentStatsYearMonth);
+      listEl.innerHTML = `
+        <div class="monthly-stats-empty">
+          <span style="font-size: 26px; display: block; margin-bottom: 6px;">📭</span>
+          No se registraron publicaciones aprobadas en <strong>${monthLabel}</strong>.
+        </div>
+      `;
+    } else {
+      listEl.innerHTML = approvedThisMonth.map(p => {
+        const d = new Date(p._appTime);
+        const day = String(d.getDate()).padStart(2, '0');
+        const monthShort = STATS_SPANISH_MONTHS[d.getMonth()].slice(0, 3).toLowerCase();
+        const year = d.getFullYear();
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const dateStr = `${day} ${monthShort} ${year}, ${hours}:${minutes}`;
+
+        const priceLabel = (p._parsedPrice !== null)
+          ? `<span class="stat-price-badge">$${p._parsedPrice.toFixed(2)} USD</span>`
+          : `<span class="stat-price-badge warning">Sin precio</span>`;
+
+        const thumb = p.imageUrl
+          ? `<img src="${p.imageUrl}" class="stat-item-thumb" alt="Flyer" onerror="this.style.display='none'">`
+          : `<div class="stat-item-thumb-placeholder">📄</div>`;
+
+        const isExpired = p.expirationDate && p.expirationDate < Date.now();
+        const statusBadge = isExpired
+          ? `<span class="stat-status-badge expired">Expirada</span>`
+          : `<span class="stat-status-badge active">Activa</span>`;
+
+        return `
+          <div class="monthly-stat-item">
+            ${thumb}
+            <div class="stat-item-info">
+              <div class="stat-item-top">
+                <span class="stat-item-biz">${p.businessName || 'Comercio'}</span>
+                ${statusBadge}
+              </div>
+              <div class="stat-item-title">${p.title || 'Publicación'}</div>
+              <div class="stat-item-meta">
+                <span>🗓️ Aprobado: ${dateStr}</span>
+                <span>•</span>
+                <span>Ref: <strong>${p.paymentReference || 'N/A'}</strong> (${p.paymentMethod || 'Pago Móvil'})</span>
+              </div>
+            </div>
+            <div class="stat-item-price-wrap">
+              ${priceLabel}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
 };
 
 app.renderAdminPending = function() {

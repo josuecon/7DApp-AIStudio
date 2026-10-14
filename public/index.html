@@ -761,6 +761,58 @@
               </div>
             </div>
 
+            <!-- SECCIÓN: ESTADÍSTICAS MENSUALES -->
+            <div class="admin-section monthly-stats-section" id="admin-monthly-stats-section">
+              <div class="admin-section-header monthly-stats-header">
+                <div class="monthly-stats-title-wrap">
+                  <h3 class="monthly-stats-title">📅 ESTADÍSTICAS MENSUALES</h3>
+                  <p class="monthly-stats-subtitle">Aprobaciones e ingresos en USD según registros oficiales de Firestore</p>
+                </div>
+                <div class="monthly-stats-controls">
+                  <button type="button" class="btn-stats-nav" onclick="app.navigateStatsMonth(-1)" title="Mes anterior" aria-label="Mes anterior">◀</button>
+                  <select id="stats-month-select" class="stats-month-dropdown" onchange="app.changeStatsMonth(this.value)" aria-label="Seleccionar mes y año">
+                    <!-- Opciones generadas dinámicamente -->
+                  </select>
+                  <button type="button" class="btn-stats-nav" onclick="app.navigateStatsMonth(1)" title="Mes siguiente" aria-label="Mes siguiente">▶</button>
+                </div>
+              </div>
+
+              <!-- Indicadores del mes seleccionado -->
+              <div class="monthly-metrics-grid">
+                <div class="monthly-metric-card">
+                  <div class="monthly-metric-icon">📑</div>
+                  <div class="monthly-metric-info">
+                    <div class="monthly-metric-num" id="monthly-stat-promos">0</div>
+                    <div class="monthly-metric-label">Publicaciones del mes</div>
+                    <div class="monthly-metric-sub">Aprobadas en el período</div>
+                  </div>
+                </div>
+
+                <div class="monthly-metric-card highlight-income">
+                  <div class="monthly-metric-icon">💵</div>
+                  <div class="monthly-metric-info">
+                    <div class="monthly-metric-num" id="monthly-stat-income">$0.00 <span class="currency-tag">USD</span></div>
+                    <div class="monthly-metric-label">Ingresos del mes (USD)</div>
+                    <div class="monthly-metric-sub">Suma de importes cobrados</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Advertencia de registros sin precio si existen -->
+              <div id="monthly-stats-warning" class="monthly-stats-warning" style="display: none;"></div>
+
+              <!-- Desglose de publicaciones aprobadas en el mes -->
+              <div class="monthly-breakdown-wrap">
+                <div class="monthly-breakdown-header">
+                  <span class="monthly-breakdown-title">Publicaciones aprobadas en este mes</span>
+                  <span class="monthly-breakdown-count" id="monthly-breakdown-count">0 registros</span>
+                </div>
+                <div id="monthly-stats-list" class="monthly-stats-list">
+                  <!-- Lista dinámica de publicaciones aprobadas en el mes -->
+                </div>
+              </div>
+            </div>
+
             <!-- Click Registry per Advertiser -->
             <div class="admin-section">
               <div class="admin-section-header">
