@@ -1,16 +1,75 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1C3029"/>
-      <stop offset="100%" stop-color="#101B18"/>
+    <!-- Background Gradient (Dark Slate / Obsidian) -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0E161C"/>
+      <stop offset="100%" stop-color="#0A1014"/>
     </linearGradient>
-    <linearGradient id="brand" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#7BE3B6"/>
-      <stop offset="100%" stop-color="#55C99A"/>
+
+    <!-- Main Vibrant Teal Pin Gradient -->
+    <linearGradient id="tealMain" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#08F7C8"/>
+      <stop offset="45%" stop-color="#00DFB6"/>
+      <stop offset="100%" stop-color="#00C9A0"/>
     </linearGradient>
+
+    <!-- Right-hand 3D Fold Facet Gradient -->
+    <linearGradient id="rightFold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00C9A5"/>
+      <stop offset="50%" stop-color="#00A98B"/>
+      <stop offset="100%" stop-color="#008A72"/>
+    </linearGradient>
+
+    <!-- Ambient Drop Shadow -->
+    <filter id="ambientShadow" x="-20%" y="-15%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="16"/>
+      <feOffset dx="0" dy="12" result="offsetblur"/>
+      <feFlood flood-color="#000000" flood-opacity="0.65"/>
+      <feComposite in2="offsetblur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
-  <rect width="512" height="512" rx="120" fill="url(#bg)"/>
-  <rect x="16" y="16" width="480" height="480" rx="108" fill="none" stroke="rgba(85, 201, 154, 0.3)" stroke-width="4"/>
-  <text x="256" y="325" font-size="210" font-weight="900" fill="url(#brand)" text-anchor="middle" font-family="'Plus Jakarta Sans', system-ui, -apple-system, sans-serif" letter-spacing="-6">7D</text>
-  <circle cx="395" cy="180" r="16" fill="#F5E9C9"/>
+
+  <!-- Dark Background Squircle -->
+  <rect width="512" height="512" rx="130" fill="url(#bgGrad)"/>
+  <rect x="6" y="6" width="500" height="500" rx="124" fill="none" stroke="rgba(255, 255, 255, 0.04)" stroke-width="2"/>
+
+  <!-- Location Pin with 3D Fold -->
+  <g filter="url(#ambientShadow)">
+    <!-- Base Location Pin Silhouette: Center (256, 214), Outer Radius 152, Tip (256, 434) -->
+    <path fill="url(#tealMain)" d="
+      M 256 62
+      C 172 62 104 130 104 214
+      C 104 282 182 368 256 434
+      C 330 368 408 282 408 214
+      C 408 130 340 62 256 62 Z
+    "/>
+
+    <!-- Right 3D Fold Facet (Angular plane on bottom right) -->
+    <path fill="url(#rightFold)" d="
+      M 256 434
+      L 256 330
+      C 298 312 348 274 388 238
+      C 398 272 382 320 348 358
+      Z
+    "/>
+
+    <!-- Inner Circular Hole (Reveal dark background) -->
+    <!-- Center (256, 214), Radius 116 -->
+    <circle cx="256" cy="214" r="116" fill="url(#bgGrad)"/>
+    
+    <!-- Subtle inner shadow in hole for depth -->
+    <circle cx="256" cy="214" r="116" fill="none" stroke="rgba(0,0,0,0.35)" stroke-width="2.5"/>
+
+    <!-- Central Crease Line at bottom tip -->
+    <line x1="256" y1="330" x2="256" y2="434" stroke="rgba(0,0,0,0.3)" stroke-width="2.5"/>
+  </g>
+
+  <!-- Pure White Centered Letters «7D» inside the circle -->
+  <g fill="#FFFFFF">
+    <text x="254" y="264" font-size="144" font-weight="900" text-anchor="middle" font-family="'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" letter-spacing="-5">7D</text>
+  </g>
 </svg>

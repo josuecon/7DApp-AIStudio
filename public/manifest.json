@@ -1,12 +1,12 @@
 {
-  "name": "7D App",
-  "short_name": "7D App",
-  "description": "Las mejores ofertas y promociones de tu ciudad esta semana. Contacta directo por WhatsApp.",
+  "name": "7DApp",
+  "short_name": "7DApp",
+  "description": "7DApp - Tu ciudad, en tus manos. Las mejores ofertas y promociones de tu ciudad esta semana.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
- "background_color": "#0B0914",
-"theme_color": "#0B0914",
+  "background_color": "#0E161C",
+  "theme_color": "#0E161C",
   "orientation": "portrait-primary",
   "categories": ["shopping", "lifestyle", "business"],
   "icons": [

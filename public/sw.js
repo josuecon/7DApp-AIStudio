@@ -1,5 +1,5 @@
 // 7D App - Progressive Web App Service Worker
-const CACHE_NAME = '7dapp-v1.1.3';
+const CACHE_NAME = '7dapp-v1.2.0';
 
 const STATIC_ASSETS = [
   './',
