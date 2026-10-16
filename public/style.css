@@ -3547,6 +3547,11 @@ body {
   gap: 12px;
 }
 
+.directory-categories-section {
+  padding: 0;
+  margin-bottom: 4px;
+}
+
 .directory-categories-scroll {
   display: flex;
   gap: 8px;

@@ -420,14 +420,29 @@ app.clearCategoryFilter = function() {
   app.renderPromotions();
 };
 
-// Abrir el panel inferior con todas las categorías activas
-app.openAllCategoriesSheet = function() {
+// Abrir el panel inferior con todas las categorías activas (contexto 'promotions' o 'directory')
+app.openAllCategoriesSheet = function(context = 'promotions') {
+  app._categoriesSheetContext = context;
   const modal = document.getElementById('modal-all-categories');
   const listContainer = document.getElementById('all-categories-sheet-list');
   const headerIcon = document.getElementById('sheet-header-icon');
+  const headerTitle = document.getElementById('sheet-header-title');
+  const headerDesc = document.getElementById('sheet-header-desc');
+
+  const isDirectory = context === 'directory';
 
   if (headerIcon) {
     headerIcon.innerHTML = app.createLucideSvgString('layout-grid', 'sheet-header-lucide', 20);
+  }
+
+  if (headerTitle) {
+    headerTitle.textContent = isDirectory ? 'Categorías de Comercios' : 'Todas las categorías';
+  }
+
+  if (headerDesc) {
+    headerDesc.textContent = isDirectory
+      ? 'Elige una categoría comercial para explorar los comercios de tu ciudad:'
+      : 'Elige una categoría para filtrar las ofertas y promociones vigentes:';
   }
 
   if (listContainer) {
@@ -436,25 +451,35 @@ app.openAllCategoriesSheet = function() {
     const grid = document.createElement('div');
     grid.className = 'categories-sheet-grid';
 
-    // Opción 1: «Todas las ofertas»
-    const isAllSelected = (!app.currentCategoryId || app.currentCategoryId === 'cat_todos');
+    // Opción 1: «Todas las ofertas» o «Todos los comercios»
+    const isAllSelected = isDirectory
+      ? (!app.directoryCategoryId || app.directoryCategoryId === 'all')
+      : (!app.currentCategoryId || app.currentCategoryId === 'cat_todos');
+
     const allCard = document.createElement('button');
     allCard.type = 'button';
     allCard.className = `category-card sheet-card ${isAllSelected ? 'active' : ''}`;
     allCard.setAttribute('aria-pressed', isAllSelected ? 'true' : 'false');
     allCard.innerHTML = `
       <span class="cat-card-icon">${app.createLucideSvgString('layers', 'cat-card-lucide', 18)}</span>
-      <span class="cat-card-name">Todas las ofertas</span>
+      <span class="cat-card-name">${isDirectory ? 'Todos los comercios' : 'Todas las ofertas'}</span>
     `;
     allCard.onclick = () => {
-      app.clearCategoryFilter();
+      if (isDirectory) {
+        app.clearDirectoryCategoryFilter();
+        app.closeAllCategoriesSheet();
+      } else {
+        app.clearCategoryFilter();
+      }
     };
     grid.appendChild(allCard);
 
     // Todas las categorías activas registradas
     const allActive = (app.categories || []).filter(c => c.active !== false && c.id !== 'cat_todos');
     allActive.forEach(cat => {
-      const isSelected = app.currentCategoryId === cat.id;
+      const isSelected = isDirectory
+        ? (app.directoryCategoryId === cat.id)
+        : (app.currentCategoryId === cat.id);
       const card = document.createElement('button');
       card.type = 'button';
       card.className = `category-card sheet-card ${isSelected ? 'active' : ''}`;
@@ -465,7 +490,12 @@ app.openAllCategoriesSheet = function() {
         <span class="cat-card-name">${cat.name}</span>
       `;
       card.onclick = () => {
-        app.selectCategory(cat.id);
+        if (isDirectory) {
+          app.setDirectoryCategoryFilter(cat.id);
+          app.closeAllCategoriesSheet();
+        } else {
+          app.selectCategory(cat.id);
+        }
       };
       grid.appendChild(card);
     });
@@ -479,6 +509,11 @@ app.openAllCategoriesSheet = function() {
   }
 
   app.refreshLucideIcons();
+};
+
+// Acceso directo específico para abrir el panel de categorías en Directorio
+app.openDirectoryCategoriesSheet = function() {
+  app.openAllCategoriesSheet('directory');
 };
 
 // Cerrar el panel inferior de categorías
@@ -4352,15 +4387,74 @@ app.renderDirectory = function() {
   const dirCityLabel = document.getElementById('directory-city-label');
   if (dirCityLabel) dirCityLabel.textContent = cityName;
 
-  // Renderizar chips de categorías
+  // Renderizar nuevo menú de categorías del directorio (Mismo diseño compacto con Lucide de Publicaciones)
+  const gridContainer = document.getElementById('directory-categories-grid');
+  const allBtn = document.getElementById('dir-cat-filter-all-btn');
+  const viewAllBtn = document.getElementById('dir-cat-btn-view-all');
+  const iconAll = document.getElementById('dir-cat-icon-all');
+  const iconViewAll = document.getElementById('dir-cat-icon-view-all');
+
+  // Actualizar icono en botón «Todas»
+  if (iconAll) {
+    iconAll.innerHTML = app.createLucideSvgString('layers', 'cat-pill-lucide', 16);
+  }
+
+  // Actualizar icono en botón «Ver todas»
+  if (iconViewAll) {
+    iconViewAll.innerHTML = app.createLucideSvgString('layout-grid', 'cat-pill-lucide', 16);
+  }
+
+  // Estado del botón «Todas»
+  const isAllSelected = (!app.directoryCategoryId || app.directoryCategoryId === 'all');
+  if (allBtn) {
+    allBtn.classList.toggle('active', isAllSelected);
+    allBtn.setAttribute('aria-pressed', isAllSelected ? 'true' : 'false');
+  }
+
+  // Obtener las 4 categorías principales según la configuración administrativa
+  const mainCategories = app.getFeaturedCategories();
+
+  // Indicar en «Ver todas» si la categoría activa no está entre las 4 principales
+  const activeNotInMain = !isAllSelected && !mainCategories.some(c => c.id === app.directoryCategoryId);
+  if (viewAllBtn) {
+    viewAllBtn.classList.toggle('active-filter-highlight', activeNotInMain);
+  }
+
+  if (gridContainer) {
+    gridContainer.innerHTML = '';
+    mainCategories.forEach(cat => {
+      const isSelected = app.directoryCategoryId === cat.id;
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = `category-card ${isSelected ? 'active' : ''}`;
+      card.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+      card.title = `Filtrar comercios por ${cat.name}`;
+
+      const iconName = app.getCategoryLucideIcon(cat);
+      const iconSvg = app.createLucideSvgString(iconName, 'cat-card-lucide', 18);
+
+      card.innerHTML = `
+        <span class="cat-card-icon">${iconSvg}</span>
+        <span class="cat-card-name">${cat.name}</span>
+      `;
+
+      card.onclick = () => {
+        app.setDirectoryCategoryFilter(isSelected ? 'all' : cat.id);
+      };
+
+      gridContainer.appendChild(card);
+    });
+  }
+
+  // Compatibilidad hacia atrás si existiera el contenedor horizontal antiguo
   const catBar = document.getElementById('directory-categories-bar');
-  if (catBar) {
+  if (catBar && !gridContainer) {
     const activeCats = app.categories.filter(c => c.active !== false);
     catBar.innerHTML = '';
 
     const allChip = document.createElement('button');
     allChip.type = 'button';
-    allChip.className = `dir-cat-chip ${(!app.directoryCategoryId || app.directoryCategoryId === 'all') ? 'active' : ''}`;
+    allChip.className = `dir-cat-chip ${isAllSelected ? 'active' : ''}`;
     allChip.innerHTML = `<span>🔥</span> <span>Todos</span>`;
     allChip.onclick = () => app.setDirectoryCategoryFilter('all');
     catBar.appendChild(allChip);
@@ -4503,6 +4597,11 @@ app.setDirectoryTypeFilter = function(type) {
 
 app.setDirectoryCategoryFilter = function(catId) {
   app.directoryCategoryId = catId;
+  app.renderDirectory();
+};
+
+app.clearDirectoryCategoryFilter = function() {
+  app.directoryCategoryId = 'all';
   app.renderDirectory();
 };
 

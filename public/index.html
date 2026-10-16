@@ -184,10 +184,23 @@
             </div>
           </div>
 
-          <!-- Category filter scroll bar & Type quick filters -->
+          <!-- Category filter & Type quick filters -->
           <div class="directory-filters-section">
-            <div class="directory-categories-scroll" id="directory-categories-bar">
-              <!-- Dynamically populated from app.categories -->
+            <!-- Directory Categories: Compact 2-column Grid & Lucide Integration -->
+            <div class="categories-section directory-categories-section" id="directory-categories-section">
+              <div class="categories-toolbar">
+                <button class="cat-pill-all active" id="dir-cat-filter-all-btn" onclick="app.clearDirectoryCategoryFilter()" title="Mostrar todos los comercios" aria-label="Mostrar todos los comercios">
+                  <span class="cat-pill-icon" id="dir-cat-icon-all"></span>
+                  <span class="cat-pill-label">Todas</span>
+                </button>
+                <button class="cat-pill-view-all" id="dir-cat-btn-view-all" onclick="app.openDirectoryCategoriesSheet()" title="Ver todas las categorías comerciales" aria-label="Abrir panel con todas las categorías de comercios">
+                  <span class="cat-pill-label">Ver todas</span>
+                  <span class="cat-pill-icon" id="dir-cat-icon-view-all"></span>
+                </button>
+              </div>
+              <div class="categories-compact-grid" id="directory-categories-grid">
+                <!-- Dynamically populated with featured active categories -->
+              </div>
             </div>
 
             <!-- Business Type / Delivery quick filters -->
@@ -1190,11 +1203,11 @@
         <div class="sheet-header">
           <div style="display: flex; align-items: center; gap: 10px;">
             <span class="sheet-icon-wrap" id="sheet-header-icon"></span>
-            <h3 style="font-size: 20px; font-weight: 900; color: #FFFFFF;">Todas las categorías</h3>
+            <h3 id="sheet-header-title" style="font-size: 20px; font-weight: 900; color: #FFFFFF;">Todas las categorías</h3>
           </div>
           <button class="icon-btn sheet-close-btn" onclick="app.closeAllCategoriesSheet()" title="Cerrar" aria-label="Cerrar panel de categorías">✕</button>
         </div>
-        <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 14px;">
+        <p id="sheet-header-desc" style="color: var(--text-secondary); font-size: 13px; margin-bottom: 14px;">
           Elige una categoría para filtrar las ofertas y promociones vigentes:
         </p>
         <div class="sheet-body categories-sheet-body" id="all-categories-sheet-list">
