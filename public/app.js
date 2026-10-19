@@ -4652,11 +4652,32 @@ app.openBusinessProfile = function(bizId) {
 
   const addrBox = document.getElementById('profile-address-box');
   const addrText = document.getElementById('profile-address-text');
-  if (biz.address && addrBox && addrText) {
-    addrText.textContent = biz.address;
+  const mapsBtn = document.getElementById('profile-maps-btn');
+
+  const cleanAddress = (biz.address || '').trim();
+  const isPhysical = biz.businessType !== 'virtual';
+  const hasValidAddress = isPhysical && cleanAddress.length > 0;
+
+  if (hasValidAddress && addrBox && addrText) {
+    addrText.textContent = cleanAddress;
     addrBox.style.display = 'flex';
-  } else if (addrBox) {
-    addrBox.style.display = 'none';
+
+    if (mapsBtn) {
+      const cityName = (biz.cityName || '').trim() || ((app.cities || []).find(c => c.id === biz.cityId) || {}).name || '';
+      const queryParts = [biz.name, cleanAddress];
+      if (cityName) queryParts.push(cityName);
+      queryParts.push('Venezuela');
+      const query = encodeURIComponent(queryParts.join(', '));
+      mapsBtn.href = `https://www.google.com/maps/search/?api=1&query=${query}`;
+      mapsBtn.style.display = 'inline-flex';
+    }
+  } else {
+    if (addrBox) addrBox.style.display = 'none';
+    if (addrText) addrText.textContent = '';
+    if (mapsBtn) {
+      mapsBtn.href = '#';
+      mapsBtn.style.display = 'none';
+    }
   }
 
   const schedBox = document.getElementById('profile-schedule-box');
@@ -4774,6 +4795,11 @@ app.renderProfileOffers = function(biz) {
 app.closeBusinessProfileModal = function() {
   const modal = document.getElementById('modal-business-profile');
   if (modal) modal.classList.remove('active');
+  const mapsBtn = document.getElementById('profile-maps-btn');
+  if (mapsBtn) {
+    mapsBtn.href = '#';
+    mapsBtn.style.display = 'none';
+  }
   app.currentProfileBiz = null;
   if (app.currentScreen !== 'feed' && app.currentScreen !== 'detail') {
     app.stopCountdownTicker();
