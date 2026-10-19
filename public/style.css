@@ -964,6 +964,27 @@ body {
   }
 }
 
+/* Form Categories Grid (2 cols on mobile, 3 on tablet/desktop) */
+.form-category-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+}
+
+@media (min-width: 640px) {
+  .form-category-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+.form-cat-card {
+  min-height: 52px;
+}
+
 /* Category Card */
 .category-card {
   display: flex;

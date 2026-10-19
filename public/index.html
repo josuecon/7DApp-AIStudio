@@ -203,12 +203,13 @@
               </div>
             </div>
 
-            <!-- Business Type / Delivery quick filters -->
-            <div class="directory-type-filters">
-              <button class="type-filter-chip active" data-type="all" onclick="app.setDirectoryTypeFilter('all')">Todos</button>
-              <button class="type-filter-chip" data-type="physical" onclick="app.setDirectoryTypeFilter('physical')">🏬 Tienda Física</button>
-              <button class="type-filter-chip" data-type="virtual" onclick="app.setDirectoryTypeFilter('virtual')">🌐 Tienda Virtual</button>
-              <button class="type-filter-chip" data-type="delivery" onclick="app.setDirectoryTypeFilter('delivery')">🛵 Con Delivery</button>
+            <!-- Business Type / Delivery / Payment quick filters (Combinables de forma independiente) -->
+            <div class="directory-type-filters" id="directory-filter-chips">
+              <button type="button" class="type-filter-chip active" id="dir-filter-all" data-type="all" onclick="app.resetDirectoryQuickFilters()" title="Restablecer filtros de tipo y pago">Todos</button>
+              <button type="button" class="type-filter-chip" id="dir-filter-physical" data-type="physical" onclick="app.toggleDirectoryTypeFilter('physical')" title="Filtrar comercios con tienda física">🏬 Tienda Física</button>
+              <button type="button" class="type-filter-chip" id="dir-filter-virtual" data-type="virtual" onclick="app.toggleDirectoryTypeFilter('virtual')" title="Filtrar comercios con tienda virtual">🌐 Tienda Virtual</button>
+              <button type="button" class="type-filter-chip" id="dir-filter-delivery" data-type="delivery" onclick="app.toggleDirectoryDeliveryFilter()" title="Filtrar comercios con servicio de delivery">🛵 Con Delivery</button>
+              <button type="button" class="type-filter-chip" id="dir-filter-cashea" data-type="Cashea" onclick="app.toggleDirectoryPaymentFilter('Cashea')" title="Filtrar comercios que aceptan Cashea">💳 Cashea</button>
             </div>
           </div>
 
@@ -259,14 +260,16 @@
                 <input type="text" id="reg-biz-name" class="form-input" placeholder="Ej. Pizzería Napolitana Roma" required>
               </div>
 
-              <div class="form-row">
-                <div class="form-group flex-1">
-                  <label>Categoría Comercial *</label>
-                  <select id="reg-biz-category" class="form-input" required></select>
-                </div>
-                <div class="form-group flex-1">
-                  <label>Ciudad *</label>
-                  <select id="reg-biz-city" class="form-input" required></select>
+              <div class="form-group">
+                <label>Ciudad *</label>
+                <select id="reg-biz-city" class="form-input" required></select>
+              </div>
+
+              <div class="form-group">
+                <label>Categoría Comercial *</label>
+                <select id="reg-biz-category" class="form-input" style="position: absolute; opacity: 0; pointer-events: none; height: 1px; width: 1px; margin: -1px; clip: rect(0,0,0,0);" tabindex="-1"></select>
+                <div id="reg-biz-category-grid" class="form-category-grid" role="radiogroup" aria-label="Seleccionar categoría comercial">
+                  <!-- Tarjetas interactivas con Lucide icons generadas dinámicamente -->
                 </div>
               </div>
 
@@ -392,6 +395,7 @@
                   <label class="payment-chip"><input type="checkbox" name="reg-payment-method" value="Zelle"><span>Zelle</span></label>
                   <label class="payment-chip"><input type="checkbox" name="reg-payment-method" value="Transferencia"><span>Transferencia</span></label>
                   <label class="payment-chip"><input type="checkbox" name="reg-payment-method" value="USDT/Cripto"><span>USDT / Cripto</span></label>
+                  <label class="payment-chip"><input type="checkbox" name="reg-payment-method" value="Cashea"><span>Cashea</span></label>
                 </div>
               </div>
 
@@ -598,14 +602,16 @@
               <div id="pub-business-linked-badge" class="linked-business-badge" style="display: none;"></div>
             </div>
 
-            <div class="form-row">
-              <div class="form-group flex-1">
-                <label>Ciudad *</label>
-                <select id="pub-city-id" class="form-input"></select>
-              </div>
-              <div class="form-group flex-1">
-                <label>Categoría *</label>
-                <select id="pub-category-id" class="form-input"></select>
+            <div class="form-group">
+              <label>Ciudad *</label>
+              <select id="pub-city-id" class="form-input"></select>
+            </div>
+
+            <div class="form-group">
+              <label>Categoría de la Promoción *</label>
+              <select id="pub-category-id" class="form-input" style="position: absolute; opacity: 0; pointer-events: none; height: 1px; width: 1px; margin: -1px; clip: rect(0,0,0,0);" tabindex="-1"></select>
+              <div id="pub-category-grid" class="form-category-grid" role="radiogroup" aria-label="Seleccionar categoría de la promoción">
+                <!-- Tarjetas interactivas con Lucide icons generadas dinámicamente -->
               </div>
             </div>
 
@@ -1505,6 +1511,7 @@
               <label class="payment-chip"><input type="checkbox" name="edit-payment-method" value="Zelle"><span>Zelle</span></label>
               <label class="payment-chip"><input type="checkbox" name="edit-payment-method" value="Transferencia"><span>Transferencia</span></label>
               <label class="payment-chip"><input type="checkbox" name="edit-payment-method" value="USDT/Cripto"><span>USDT / Cripto</span></label>
+              <label class="payment-chip"><input type="checkbox" name="edit-payment-method" value="Cashea"><span>Cashea</span></label>
             </div>
           </div>
 

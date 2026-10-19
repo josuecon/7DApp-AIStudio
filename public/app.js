@@ -2003,9 +2003,60 @@ app.updatePublishSelects = function() {
   }
 
   const catSelect = document.getElementById('pub-category-id');
+  const catGrid = document.getElementById('pub-category-grid');
   if (catSelect) {
     const activeCats = app.categories.filter(c => c.active !== false && c.id !== 'cat_todos');
+    const prevVal = catSelect.value;
     catSelect.innerHTML = activeCats.map(c => `<option value="${c.id}">${c.icon || '🏷️'} ${c.name}</option>`).join('');
+    // Preservar valor seleccionado si sigue activo, o seleccionar por defecto la primera categoría
+    const selectedVal = (prevVal && activeCats.some(c => c.id === prevVal))
+      ? prevVal
+      : (activeCats[0] ? activeCats[0].id : '');
+    catSelect.value = selectedVal;
+
+    if (catGrid) {
+      catGrid.innerHTML = '';
+      activeCats.forEach(cat => {
+        const isSelected = catSelect.value === cat.id;
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `category-card form-cat-card ${isSelected ? 'active' : ''}`;
+        card.setAttribute('data-cat-id', cat.id);
+        card.setAttribute('role', 'radio');
+        card.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+        card.title = `Seleccionar ${cat.name}`;
+
+        const iconName = app.getCategoryLucideIcon(cat);
+        const iconSvg = app.createLucideSvgString(iconName, 'cat-card-lucide', 18);
+
+        card.innerHTML = `
+          <span class="cat-card-icon">${iconSvg}</span>
+          <span class="cat-card-name">${cat.name}</span>
+        `;
+
+        card.onclick = () => {
+          app.setPublishCategory(cat.id);
+        };
+
+        catGrid.appendChild(card);
+      });
+    }
+  }
+};
+
+app.setPublishCategory = function(catId) {
+  const catSelect = document.getElementById('pub-category-id');
+  if (catSelect) {
+    catSelect.value = catId;
+    catSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const catGrid = document.getElementById('pub-category-grid');
+  if (catGrid) {
+    catGrid.querySelectorAll('.category-card').forEach(btn => {
+      const isSelected = btn.getAttribute('data-cat-id') === catId;
+      btn.classList.toggle('active', isSelected);
+      btn.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+    });
   }
 
   // Precios y datos de pago
@@ -4206,7 +4257,7 @@ const INITIAL_SEED_BUSINESSES = [
     instagram: 'tecnozone_eltigre',
     tiktok: '',
     hasDelivery: true,
-    paymentMethods: ['Pago Móvil', 'Punto de Venta', 'Zelle', 'USDT/Cripto'],
+    paymentMethods: ['Pago Móvil', 'Punto de Venta', 'Zelle', 'USDT/Cripto', 'Cashea'],
     schedule: {
       weekdays: '08:30 AM - 05:30 PM',
       saturday: '09:00 AM - 02:00 PM',
@@ -4469,35 +4520,59 @@ app.renderDirectory = function() {
     });
   }
 
-  // Filtrado de comercios
+  // Sincronizar estados visuales de los chips de filtrado combinables
+  app.updateDirectoryFilterChips();
+
+  // Filtrado de comercios multi-faceta (AND entre grupos independientes)
   const query = (app.directorySearchQuery || '').toLowerCase().trim();
   const catFilter = app.directoryCategoryId || 'all';
-  const typeFilter = app.directoryTypeFilter || 'all';
+  const typeFilters = app.directoryTypeFilters || [];
+  const deliveryFilter = !!app.directoryDeliveryFilter;
+  const paymentFilters = app.directoryPaymentFilters || [];
 
   const filtered = (app.businesses || []).filter(biz => {
-    // Solo comercios con estatus activo en la vista pública
+    // 1. Solo comercios con estatus activo en la vista pública
     if (biz.status !== 'active') return false;
 
-    // Filtro por ciudad activa seleccionada
+    // 2. Filtro por ciudad activa seleccionada
     if (biz.cityId && biz.cityId !== app.currentCityId) return false;
 
-    // Filtro por categoría seleccionada
+    // 3. Grupo Categoría: Si se selecciona una categoría concreta, exigir pertenencia
     if (catFilter !== 'all' && biz.categoryId !== catFilter && biz.category !== catFilter) {
       return false;
     }
 
-    // Filtro por modalidad de atención / delivery
-    if (typeFilter === 'physical' && biz.businessType !== 'physical' && biz.businessType !== 'both') {
-      return false;
+    // 4. Grupo Tipo de Comercio: Si hay selección, aceptar comercios que coincidan con cualquiera de los tipos activos
+    if (typeFilters.length > 0) {
+      let matchesType = false;
+      const isPhysical = (biz.businessType === 'physical' || biz.businessType === 'both');
+      const isVirtual = (biz.businessType === 'virtual' || biz.businessType === 'both');
+
+      if (typeFilters.includes('physical') && isPhysical) {
+        matchesType = true;
+      }
+      if (typeFilters.includes('virtual') && isVirtual) {
+        matchesType = true;
+      }
+
+      if (!matchesType) return false;
     }
-    if (typeFilter === 'virtual' && biz.businessType !== 'virtual' && biz.businessType !== 'both') {
-      return false;
-    }
-    if (typeFilter === 'delivery' && !biz.hasDelivery) {
+
+    // 5. Grupo Delivery: Si está activado, exigir hasDelivery === true
+    if (deliveryFilter && !biz.hasDelivery) {
       return false;
     }
 
-    // Filtro por buscador
+    // 6. Grupo Métodos de Pago: Si hay selección (ej. Cashea), exigir que acepte al menos uno de los métodos seleccionados
+    if (paymentFilters.length > 0) {
+      const bizPayments = Array.isArray(biz.paymentMethods) ? biz.paymentMethods : [];
+      const acceptsPayment = paymentFilters.some(method => bizPayments.includes(method));
+      if (!acceptsPayment) {
+        return false;
+      }
+    }
+
+    // 7. Grupo Buscador: Si existe búsqueda por texto, exigir coincidencia
     if (query) {
       const matchName = (biz.name || '').toLowerCase().includes(query);
       const matchDesc = (biz.description || '').toLowerCase().includes(query);
@@ -4587,12 +4662,89 @@ app.clearDirectorySearch = function() {
   app.renderDirectory();
 };
 
-app.setDirectoryTypeFilter = function(type) {
-  app.directoryTypeFilter = type;
-  document.querySelectorAll('.type-filter-chip').forEach(chip => {
-    chip.classList.toggle('active', chip.getAttribute('data-type') === type);
-  });
+app.updateDirectoryFilterChips = function() {
+  const types = app.directoryTypeFilters || [];
+  const hasDelivery = !!app.directoryDeliveryFilter;
+  const payments = app.directoryPaymentFilters || [];
+  const isAll = (types.length === 0 && !hasDelivery && payments.length === 0);
+
+  const chipAll = document.getElementById('dir-filter-all');
+  const chipPhys = document.getElementById('dir-filter-physical');
+  const chipVirt = document.getElementById('dir-filter-virtual');
+  const chipDeliv = document.getElementById('dir-filter-delivery');
+  const chipCashea = document.getElementById('dir-filter-cashea');
+
+  if (chipAll) {
+    chipAll.classList.toggle('active', isAll);
+    chipAll.setAttribute('aria-pressed', isAll ? 'true' : 'false');
+  }
+  if (chipPhys) {
+    const active = types.includes('physical');
+    chipPhys.classList.toggle('active', active);
+    chipPhys.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+  if (chipVirt) {
+    const active = types.includes('virtual');
+    chipVirt.classList.toggle('active', active);
+    chipVirt.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+  if (chipDeliv) {
+    chipDeliv.classList.toggle('active', hasDelivery);
+    chipDeliv.setAttribute('aria-pressed', hasDelivery ? 'true' : 'false');
+  }
+  if (chipCashea) {
+    const active = payments.includes('Cashea');
+    chipCashea.classList.toggle('active', active);
+    chipCashea.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+};
+
+app.toggleDirectoryTypeFilter = function(type) {
+  if (!Array.isArray(app.directoryTypeFilters)) app.directoryTypeFilters = [];
+  const idx = app.directoryTypeFilters.indexOf(type);
+  if (idx === -1) {
+    app.directoryTypeFilters.push(type);
+  } else {
+    app.directoryTypeFilters.splice(idx, 1);
+  }
   app.renderDirectory();
+};
+
+app.toggleDirectoryDeliveryFilter = function() {
+  app.directoryDeliveryFilter = !app.directoryDeliveryFilter;
+  app.renderDirectory();
+};
+
+app.toggleDirectoryPaymentFilter = function(method) {
+  if (!Array.isArray(app.directoryPaymentFilters)) app.directoryPaymentFilters = [];
+  const idx = app.directoryPaymentFilters.indexOf(method);
+  if (idx === -1) {
+    app.directoryPaymentFilters.push(method);
+  } else {
+    app.directoryPaymentFilters.splice(idx, 1);
+  }
+  app.renderDirectory();
+};
+
+app.resetDirectoryQuickFilters = function() {
+  app.directoryTypeFilters = [];
+  app.directoryDeliveryFilter = false;
+  app.directoryPaymentFilters = [];
+  app.renderDirectory();
+};
+
+app.setDirectoryTypeFilter = function(type) {
+  if (type === 'all') {
+    app.resetDirectoryQuickFilters();
+  } else if (type === 'delivery') {
+    app.toggleDirectoryDeliveryFilter();
+  } else if (type === 'physical' || type === 'virtual') {
+    app.toggleDirectoryTypeFilter(type);
+  } else if (type === 'Cashea') {
+    app.toggleDirectoryPaymentFilter('Cashea');
+  } else {
+    app.renderDirectory();
+  }
 };
 
 app.setDirectoryCategoryFilter = function(catId) {
@@ -4811,10 +4963,43 @@ app.closeBusinessProfileModal = function() {
 // --------------------------------------------------------------------------
 app.populateRegisterBusinessSelects = function() {
   const catSelect = document.getElementById('reg-biz-category');
+  const catGrid = document.getElementById('reg-biz-category-grid');
   if (catSelect) {
     const activeCats = app.categories.filter(c => c.active !== false && c.id !== 'cat_todos');
+    const prevVal = catSelect.value;
     catSelect.innerHTML = '<option value="">Selecciona una categoría...</option>' + 
       activeCats.map(c => `<option value="${c.id}">${c.icon || '🏷️'} ${c.name}</option>`).join('');
+    if (prevVal && activeCats.some(c => c.id === prevVal)) {
+      catSelect.value = prevVal;
+    }
+
+    if (catGrid) {
+      catGrid.innerHTML = '';
+      activeCats.forEach(cat => {
+        const isSelected = catSelect.value === cat.id;
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `category-card form-cat-card ${isSelected ? 'active' : ''}`;
+        card.setAttribute('data-cat-id', cat.id);
+        card.setAttribute('role', 'radio');
+        card.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+        card.title = `Seleccionar ${cat.name}`;
+
+        const iconName = app.getCategoryLucideIcon(cat);
+        const iconSvg = app.createLucideSvgString(iconName, 'cat-card-lucide', 18);
+
+        card.innerHTML = `
+          <span class="cat-card-icon">${iconSvg}</span>
+          <span class="cat-card-name">${cat.name}</span>
+        `;
+
+        card.onclick = () => {
+          app.setRegisterBusinessCategory(cat.id);
+        };
+
+        catGrid.appendChild(card);
+      });
+    }
   }
 
   const citySelect = document.getElementById('reg-biz-city');
@@ -4823,6 +5008,22 @@ app.populateRegisterBusinessSelects = function() {
     citySelect.innerHTML = '<option value="">Selecciona tu ciudad...</option>' + 
       activeCities.map(c => `<option value="${c.id}">${c.name} (${c.state || 'VE'})</option>`).join('');
     if (app.currentCityId) citySelect.value = app.currentCityId;
+  }
+};
+
+app.setRegisterBusinessCategory = function(catId) {
+  const catSelect = document.getElementById('reg-biz-category');
+  if (catSelect) {
+    catSelect.value = catId;
+    catSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const catGrid = document.getElementById('reg-biz-category-grid');
+  if (catGrid) {
+    catGrid.querySelectorAll('.category-card').forEach(btn => {
+      const isSelected = btn.getAttribute('data-cat-id') === catId;
+      btn.classList.toggle('active', isSelected);
+      btn.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+    });
   }
 };
 
