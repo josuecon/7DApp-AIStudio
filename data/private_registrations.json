@@ -1,0 +1,21 @@
+[
+  {
+    "businessId": "biz_local_test_99",
+    "businessName": "Biz Local Test",
+    "representative": {
+      "name": "Tester",
+      "phone": "123456",
+      "email": "test@local.com"
+    },
+    "submittedAt": "2026-10-30T00:58:52.213Z",
+    "status": "pending_binding",
+    "associatedUid": null,
+    "reviewedBy": null,
+    "reviewedAt": null,
+    "emailNotification": {
+      "sent": false,
+      "sentAt": null,
+      "service": "resend"
+    }
+  }
+]

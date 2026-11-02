@@ -59,7 +59,7 @@
     <!-- Top Header -->
     <header class="app-header">
       <div class="header-inner">
-        <div class="brand" onclick="app.showScreen('feed')">
+        <div class="brand" onclick="app.showScreen('events')">
           <img class="brand-badge" src="icons/icon-192.png?v=3" alt="7DApp" />
           <div class="brand-text">
             <span class="brand-name">7DApp</span>
@@ -99,8 +99,76 @@
     <!-- MAIN VIEWS -->
     <main class="app-main">
       
-      <!-- SCREEN 1: FEED / HOME -->
-      <section id="screen-feed" class="screen active">
+      <!-- SCREEN: EVENTOS PÚBLICOS -->
+      <section id="screen-events" class="screen active">
+        <!-- Hero banner de Eventos -->
+        <div class="hero-banner events-hero-banner">
+          <div class="hero-content">
+            <div class="hero-badge">📸 COBERTURAS EXCLUSIVAS</div>
+            <h1 class="hero-title">Eventos en tu Ciudad</h1>
+            <p class="hero-sub">Revive los mejores momentos, celebraciones y coberturas fotográficas exclusivas en 7D App</p>
+            <div class="hero-footer-row">
+              <button class="hero-share-btn" onclick="app.shareApp()" title="Compartir App">
+                <svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/></svg>
+                <span>Compartir</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="events-container">
+          <!-- Sub-barra de conteo de eventos -->
+          <div class="feed-subbar events-subbar">
+            <div class="feed-count">
+              <span id="active-events-count">0</span> eventos publicados
+            </div>
+          </div>
+
+          <!-- Loading state -->
+          <div id="events-loading" class="events-loading-box" style="display: none;">
+            <div class="loading-spinner"></div>
+            <p>Cargando coberturas de eventos...</p>
+          </div>
+
+          <!-- Error state -->
+          <div id="events-error" class="alert-danger" style="display: none; margin-bottom: 20px; text-align: center;">
+            <p style="font-weight: 700; margin-bottom: 4px;">⚠️ No se pudieron cargar los eventos</p>
+            <p style="font-size: 13px; margin-bottom: 10px;">Ocurrió un problema al conectar con el servidor.</p>
+            <button class="btn btn-secondary btn-sm" onclick="app.syncEvents()">Reintentar</button>
+          </div>
+
+          <!-- Empty state -->
+          <div id="events-empty-state" class="empty-state" style="display: none;">
+            <div class="empty-icon">📸</div>
+            <h3>No hay eventos disponibles en este momento</h3>
+            <p>Próximamente publicaremos nuevas coberturas fotográficas y momentos destacados.</p>
+          </div>
+
+          <!-- Public Events Grid -->
+          <div id="public-events-grid" class="events-grid">
+            <!-- Dynamically populated event cards -->
+          </div>
+
+          <!-- Sección de flyers recientes debajo de Eventos (Máximo 5 flyers activos más recientes) -->
+          <div id="events-recent-flyers-section" class="events-recent-flyers-section" style="display: none;">
+            <div class="recent-flyers-header">
+              <div class="recent-flyers-title-wrap">
+                <span class="recent-flyers-kicker">OFERTAS DE LA SEMANA</span>
+                <h2 class="recent-flyers-title">🏷️ Flyers Destacados</h2>
+              </div>
+              <button class="btn-ver-todas-ofertas" onclick="app.showScreen('feed')">
+                Ver todas las ofertas →
+              </button>
+            </div>
+            <div id="events-recent-flyers-grid" class="promos-grid">
+              <!-- Dynamically populated top 5 flyer cards -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 1: FEED / OFERTAS -->
+      <section id="screen-feed" class="screen">
         <!-- Hero banner -->
         <div class="hero-banner">
           <div class="hero-content">
@@ -558,6 +626,76 @@
         </div>
       </section>
 
+      <!-- SCREEN: DETALLE DEL EVENTO -->
+      <section id="screen-event-detail" class="screen">
+        <div class="detail-container event-detail-container">
+          <div class="detail-header-nav">
+            <button class="circle-btn" onclick="app.closeEventDetail()" title="Volver a Eventos">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            </button>
+            <button class="circle-btn" onclick="app.shareCurrentEvent()" title="Compartir Evento">
+              <svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/></svg>
+            </button>
+          </div>
+
+          <!-- Estado: Evento inactivo o no encontrado -->
+          <div id="event-detail-error" class="empty-state" style="display: none;">
+            <div class="empty-icon">⚠️</div>
+            <h3 id="event-detail-error-title">Evento no disponible</h3>
+            <p id="event-detail-error-desc">Esta cobertura ya no se encuentra disponible al público o el enlace es incorrecto.</p>
+            <button class="btn btn-secondary" onclick="app.showScreen('events')">Volver a Eventos</button>
+          </div>
+
+          <!-- Contenido del Detalle del Evento -->
+          <div id="event-detail-content" class="event-detail-content">
+            <div class="event-detail-meta-row">
+              <span id="event-detail-category-badge" class="badge-tag event-cat-badge">🎉 Evento</span>
+              <span id="event-detail-date" class="event-detail-date"></span>
+            </div>
+
+            <h1 id="event-detail-title" class="event-detail-title"></h1>
+
+            <!-- Reseña Editorial Completa -->
+            <div class="event-detail-review-card">
+              <div class="review-card-header">
+                <span class="review-kicker">RESEÑA DE LA COBERTURA</span>
+              </div>
+              <div id="event-detail-review-text" class="event-detail-review-text"></div>
+            </div>
+
+            <!-- Botón Compartir Destacado -->
+            <div class="event-detail-share-box">
+              <button class="btn btn-primary btn-large btn-share-event-cta" onclick="app.shareCurrentEvent()">
+                <svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/></svg>
+                <span>Compartir Evento</span>
+              </button>
+            </div>
+
+            <!-- Galería Fotográfica -->
+            <div class="event-gallery-section">
+              <div class="event-gallery-header">
+                <div>
+                  <span class="gallery-kicker">REGISTRO FOTOGRÁFICO</span>
+                  <h2 class="gallery-title">Galería de Fotos (<span id="event-detail-photo-count">0</span>)</h2>
+                </div>
+                <span class="gallery-hint">Toca cualquier foto para ampliarla</span>
+              </div>
+
+              <!-- Estado: Galería sin fotografías válidas -->
+              <div id="event-detail-empty-gallery" class="empty-state" style="display: none; padding: 24px;">
+                <div class="empty-icon">📷</div>
+                <p style="color: var(--text-secondary); font-size: 14px;">Este evento no contiene fotografías disponibles en la galería.</p>
+              </div>
+
+              <!-- Cuadrícula de fotos -->
+              <div id="event-detail-gallery-grid" class="event-gallery-grid">
+                <!-- Dynamically populated photo thumbnails -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- SCREEN 3: USER PUBLISH FORM -->
       <section id="screen-publish" class="screen">
         <div class="publish-card">
@@ -777,6 +915,7 @@
             <button class="admin-tab" onclick="app.switchAdminTab('cities')">📍 Ciudades (<span id="admin-cities-badge">0</span>)</button>
             <button class="admin-tab" onclick="app.switchAdminTab('categories')">🏷️ Categorías (<span id="admin-cats-badge">0</span>)</button>
             <button class="admin-tab" onclick="app.switchAdminTab('directory')">🏢 Comercios (<span id="admin-directory-badge">0</span>)</button>
+            <button class="admin-tab" onclick="app.switchAdminTab('events')">📸 Eventos (<span id="admin-events-badge">0</span>)</button>
             <button class="admin-tab" onclick="app.switchAdminTab('settings')">Ajustes & Pago Móvil</button>
           </div>
 
@@ -1136,6 +1275,24 @@
               <!-- Dynamically populated businesses -->
             </div>
           </div>
+
+          <!-- TAB: GESTIÓN DE EVENTOS -->
+          <div id="admin-tab-events" class="admin-tab-pane">
+            <div class="admin-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h3 style="margin: 0; font-size: 16px;">📸 GESTIÓN DE EVENTOS SOCIALES Y CORPORATIVOS</h3>
+                <p style="font-size: 13px; color: var(--text-secondary); margin: 4px 0 0 0;">
+                  Publica eventos destacados con reseñas editoriales y galerías de hasta 30 fotografías en alta calidad.
+                </p>
+              </div>
+              <button class="btn btn-primary" onclick="app.openAdminEventModal()" style="display: flex; align-items: center; gap: 6px;">
+                <span>➕</span> Nuevo Evento
+              </button>
+            </div>
+            <div id="admin-events-list" class="admin-cards-list">
+              <!-- Dynamically populated events -->
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1143,7 +1300,14 @@
 
     <!-- Fixed Bottom Navigation Bar -->
     <nav id="bottom-nav" class="bottom-nav" aria-label="Navegación principal">
-      <button class="bottom-nav-item active" id="nav-btn-feed" onclick="app.showScreen('feed')">
+      <button class="bottom-nav-item active" id="nav-btn-events" onclick="app.showScreen('events')">
+        <svg class="bottom-nav-icon" viewBox="0 0 24 24">
+          <path d="M9 3L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.17L15 3H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-2c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3z"/>
+        </svg>
+        <span class="bottom-nav-label">Eventos</span>
+      </button>
+
+      <button class="bottom-nav-item" id="nav-btn-feed" onclick="app.showScreen('feed')">
         <svg class="bottom-nav-icon" viewBox="0 0 24 24">
           <path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.61 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"/>
         </svg>
@@ -1180,6 +1344,30 @@
           <svg class="icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
         </button>
         <div class="fullscreen-top-badge">7D App • Pantalla Completa</div>
+      </div>
+    </div>
+
+    <!-- MODAL: Visor de Fotos de Eventos (Lightbox) -->
+    <div id="modal-event-lightbox" class="modal-fullscreen event-lightbox-modal" style="display: none;" onclick="app.closeEventPhotoLightbox()">
+      <div class="modal-fullscreen-content event-lightbox-content" onclick="event.stopPropagation()">
+        <div class="lightbox-header">
+          <div class="fullscreen-top-badge" id="lightbox-top-badge">7D App • Cobertura</div>
+          <span id="lightbox-counter" class="lightbox-counter">Foto 1 de 1</span>
+          <button class="modal-close-btn" onclick="app.closeEventPhotoLightbox()" title="Cerrar visor">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+        <div class="lightbox-body">
+          <button type="button" class="lightbox-arrow-btn lightbox-prev" id="lightbox-btn-prev" onclick="app.prevEventPhoto()" title="Foto anterior" aria-label="Foto anterior">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+          </button>
+          <div class="lightbox-image-container">
+            <img id="lightbox-img" class="lightbox-img" src="" alt="Fotografía del evento" />
+          </div>
+          <button type="button" class="lightbox-arrow-btn lightbox-next" id="lightbox-btn-next" onclick="app.nextEventPhoto()" title="Siguiente foto" aria-label="Siguiente foto">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -1538,6 +1726,88 @@
           <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-subtle);">
             <button type="button" class="btn btn-secondary" onclick="app.closeAdminEditBusinessModal()">Cancelar</button>
             <button type="submit" id="btn-save-edit-business" class="btn btn-primary">💾 Guardar Cambios</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL: Admin Event (Creación / Edición) -->
+    <div id="modal-admin-event" class="modal-overlay" onclick="app.closeAdminEventModal(true)">
+      <div class="modal-dialog" style="max-width: 680px; max-height: 90vh; overflow-y: auto;" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <h3 id="modal-event-title">📸 Nuevo Evento</h3>
+          <button class="icon-btn" onclick="app.closeAdminEventModal(true)" title="Cerrar">✕</button>
+        </div>
+        <form id="form-admin-event" onsubmit="app.handleAdminEventSubmit(event)">
+          <input type="hidden" id="event-id">
+          
+          <div id="event-form-error" class="form-error-msg" style="display: none; margin-bottom: 14px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #f87171; padding: 10px; border-radius: 8px; font-size: 13px;"></div>
+
+          <div class="form-group">
+            <label>Título del Evento *</label>
+            <input type="text" id="event-title-input" class="form-input" placeholder="Ej: Boda Gómez & Martínez en Jardines del Este" required maxlength="120">
+          </div>
+
+          <div class="form-group">
+            <label>Categoría del Evento *</label>
+            <select id="event-category-input" class="form-input" required>
+              <option value="">Selecciona una categoría...</option>
+              <option value="birthday">🎂 Cumpleaños</option>
+              <option value="fifteen_years">👑 15 años</option>
+              <option value="wedding">💍 Bodas</option>
+              <option value="corporate">💼 Corporativo</option>
+              <option value="celebration">🎉 Celebraciones</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Reseña o Descripción Editorial *</label>
+            <textarea id="event-review-input" class="form-input" rows="4" placeholder="Escribe la reseña descriptiva del evento, homenajeados, momentos clave y agradecimientos..." required maxlength="3000"></textarea>
+          </div>
+
+          <!-- Galería Fotográfica -->
+          <div class="form-group" style="margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <label style="margin: 0; font-weight: 700;">Galería Fotográfica (Hasta 30 fotos) *</label>
+              <span id="event-photo-count-badge" class="badge" style="background: rgba(85, 201, 154, 0.15); color: #55c99a; font-weight: 700;">0 / 30 fotos</span>
+            </div>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.4;">
+              Admite JPG, JPEG, PNG y WebP (máx. 10 MB por foto). Cada imagen se procesa individualmente a WebP (1920 px) para proteger la memoria de tu dispositivo.
+            </p>
+
+            <!-- Barra de progreso general -->
+            <div id="event-upload-progress-box" style="display: none; margin-bottom: 14px; background: rgba(28, 48, 41, 0.7); border: 1px solid rgba(85, 201, 154, 0.3); border-radius: 8px; padding: 10px;">
+              <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;">
+                <span id="event-upload-progress-label" style="color: #55c99a; font-weight: 600;">Procesando fotografías (1 a la vez)...</span>
+                <span id="event-upload-progress-percent" style="color: #fff; font-weight: 700;">0%</span>
+              </div>
+              <div style="width: 100%; height: 6px; background: #14231e; border-radius: 3px; overflow: hidden;">
+                <div id="event-upload-progress-bar" style="width: 0%; height: 100%; background: #55c99a; transition: width 0.3s ease;"></div>
+              </div>
+            </div>
+
+            <!-- Botones de selección y reintento -->
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap;">
+              <input type="file" id="event-photo-file-input" multiple accept="image/jpeg,image/png,image/webp" style="display: none;" onchange="app.handleEventPhotoSelect(event)">
+              <button type="button" class="btn btn-secondary" onclick="document.getElementById('event-photo-file-input').click()">
+                📁 Seleccionar Fotografías
+              </button>
+              <button type="button" id="event-retry-btn" class="btn btn-secondary" style="display: none; border-color: #f59e0b; color: #f59e0b;" onclick="app.retryFailedEventPhotos()">
+                🔄 Reintentar Fotos Fallidas
+              </button>
+            </div>
+
+            <!-- Cuadrícula de fotos en la galería -->
+            <div id="event-photos-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; min-height: 80px; max-height: 320px; overflow-y: auto; padding: 10px; background: #101b18; border: 1px solid var(--border-subtle); border-radius: 8px;">
+              <div id="event-photos-empty" style="grid-column: 1 / -1; text-align: center; color: var(--text-secondary); padding: 24px 0; font-size: 13px;">
+                No hay fotografías seleccionadas para este evento.
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+            <button type="button" class="btn btn-secondary" onclick="app.closeAdminEventModal(true)">Cancelar</button>
+            <button type="submit" id="btn-save-event" class="btn btn-primary">💾 Guardar Evento</button>
           </div>
         </form>
       </div>

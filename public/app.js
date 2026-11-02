@@ -49,8 +49,19 @@ const FIRESTORE_BUSINESSES_COLLECTION = 'businesses';
 const FIRESTORE_SETTINGS_COLLECTION = 'settings';
 const FIRESTORE_SETTINGS_DOC = 'general';
 const FIRESTORE_CITIES_DOC = 'cities';
+const FIRESTORE_EVENTS_COLLECTION = 'events';
 const FIRESTORE_LEGACY_COLLECTION = 'Categorias de producto'; // Colección legacy (solo para categorías/diagnóstico temporal)
 const FIRESTORE_COLLECTION = FIRESTORE_LEGACY_COLLECTION;
+
+// Categorías oficiales obligatorias del Módulo Eventos (Fase 2)
+const EVENT_CATEGORIES = [
+  { id: 'birthday', label: 'Cumpleaños', icon: '🎂' },
+  { id: 'fifteen_years', label: '15 años', icon: '👑' },
+  { id: 'wedding', label: 'Bodas', icon: '💍' },
+  { id: 'corporate', label: 'Corporativo', icon: '💼' },
+  { id: 'celebration', label: 'Celebraciones', icon: '🎉' }
+];
+
 const MAX_IMAGE_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 750 KB límite preventivo para proteger Firestore antes de R2
 const R2_UPLOAD_URL = 'https://7dapp-media-api.lahirbueno.workers.dev/upload';
 const NOTIFICATION_WORKER_URL = 'https://7dapp-notifications.lahirbueno.workers.dev/api/business/register';
@@ -69,6 +80,11 @@ const app = {
   selectedFileBase64: null,
   deferredInstallPrompt: null,
   activeSubcollectionUnsubs: {},
+  events: [],
+  activeEventQueue: null,
+  currentEditingEventId: null,
+  removedExistingPhotos: [],
+  eventPreviewUrls: new Set(),
 
   // Configuración de la plataforma (actualizable desde el panel admin)
   settings: {
@@ -139,7 +155,15 @@ promotionsLoaded: false,
   tempBizLogoFile: null,
   tempBizCoverFile: null,
   businesses: [],
-  currentStatsYearMonth: null
+  currentStatsYearMonth: null,
+
+  // Propiedades del Módulo Eventos (Fase 3.0: Interfaz Pública)
+  events: [],
+  eventsLoaded: false,
+  eventsLoadError: null,
+  currentEvent: null,
+  currentLightboxPhotoIndex: 0,
+  currentLightboxPhotos: []
 };
 
 // Exponer app en window para eventos HTML
@@ -154,8 +178,11 @@ app.showScreen = function(screenName) {
   if (screenName !== 'detail') {
     app.currentPromo = null;
   }
+  if (screenName !== 'event-detail') {
+    app.currentEvent = null;
+  }
   const isProfileModalActive = app.currentProfileBiz && document.getElementById('modal-business-profile')?.classList.contains('active');
-  if (screenName === 'feed' || screenName === 'detail' || isProfileModalActive) {
+  if (screenName === 'feed' || screenName === 'detail' || screenName === 'events' || isProfileModalActive) {
     app.startCountdownTicker();
   } else {
     app.stopCountdownTicker();
@@ -183,7 +210,10 @@ app.showScreen = function(screenName) {
   window.scrollTo(0, 0);
 
   // Inicializar o refrescar la pantalla objetivo
-  if (screenName === 'feed') {
+  if (screenName === 'events') {
+    app.renderPublicEvents();
+    app.renderRecentFlyersForEvents();
+  } else if (screenName === 'feed') {
     app.renderCategories();
     app.renderPromotions();
   } else if (screenName === 'directory') {
@@ -798,6 +828,59 @@ app.stopCountdownTicker = function() {
   }
 };
 
+app.createPromoCardElement = function(promo, now = Date.now()) {
+  const cityName = (app.cities.find(c => c.id === promo.cityId) || {}).name || 'Venezuela';
+  const card = document.createElement('div');
+  card.className = 'promo-card';
+  card.onclick = () => app.openDetail(promo.id);
+
+  const imageUrl = promo.imageUrl || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=80';
+  const linkedBiz = app.getApprovedBusinessForPromo(promo);
+
+  const bizName = (linkedBiz && linkedBiz.name) || promo.businessName || 'Comercio Local';
+  const bizLogoHtml = linkedBiz && linkedBiz.logoUrl
+    ? `<img class="promo-card-biz-logo" src="${linkedBiz.logoUrl}" alt="${bizName}">`
+    : `<span style="font-size: 14px;">⭐</span>`;
+
+  const storeBtnHtml = linkedBiz
+    ? `<button type="button" class="btn-ver-tienda" onclick="event.stopPropagation(); app.openBusinessProfile('${linkedBiz.id}')" title="Ver ficha del comercio">🏪 Ver tienda</button>`
+    : '';
+
+  const countdownText = app.formatPromoCountdown(promo, now);
+  const isExpired = app.isPromoExpired(promo, now);
+
+  card.innerHTML = `
+    <div class="promo-card-image-wrap">
+      <img class="promo-card-image" src="${imageUrl}" alt="${promo.title || 'Promoción'}" loading="lazy">
+      <span class="promo-badge-city">📍 ${cityName}</span>
+      <span class="promo-badge-city promo-badge-countdown ${isExpired ? 'is-expired' : ''}" data-promo-id="${promo.id}">${countdownText}</span>
+    </div>
+    <div class="promo-card-body">
+      <div class="promo-card-business-row">
+        <div class="promo-card-business">
+          ${bizLogoHtml}
+          <span class="promo-business-name">${bizName}</span>
+        </div>
+        ${storeBtnHtml}
+      </div>
+      <h3 class="promo-card-title">${promo.title || 'Oferta Especial'}</h3>
+      <p class="promo-card-desc">${promo.description || ''}</p>
+      <div class="promo-card-footer">
+        <span class="clicks-counter">🔥 ${promo.whatsappClicks || 0} interesados</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button class="promo-card-share-btn" onclick="event.stopPropagation(); app.sharePromoById('${promo.id}')" title="Compartir">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/></svg>
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); app.openDetail('${promo.id}')">
+            Ver Oferta
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  return card;
+};
+
 app.renderPromotions = function() {
   const grid = document.getElementById('promotions-grid');
   const emptyState = document.getElementById('empty-state');
@@ -821,59 +904,14 @@ app.renderPromotions = function() {
   if (emptyState) emptyState.style.display = (!app.promotionsLoaded) ? 'none' : ((filtered.length === 0) ? 'block' : 'none');
 
   filtered.forEach(promo => {
-    const cityName = (app.cities.find(c => c.id === promo.cityId) || {}).name || 'Venezuela';
-    const card = document.createElement('div');
-    card.className = 'promo-card';
-    card.onclick = () => app.openDetail(promo.id);
-
-    const imageUrl = promo.imageUrl || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=80';
-    const linkedBiz = app.getApprovedBusinessForPromo(promo);
-
-    const bizName = (linkedBiz && linkedBiz.name) || promo.businessName || 'Comercio Local';
-    const bizLogoHtml = linkedBiz && linkedBiz.logoUrl
-      ? `<img class="promo-card-biz-logo" src="${linkedBiz.logoUrl}" alt="${bizName}">`
-      : `<span style="font-size: 14px;">⭐</span>`;
-
-    const storeBtnHtml = linkedBiz
-      ? `<button type="button" class="btn-ver-tienda" onclick="event.stopPropagation(); app.openBusinessProfile('${linkedBiz.id}')" title="Ver ficha del comercio">🏪 Ver tienda</button>`
-      : '';
-
-    const countdownText = app.formatPromoCountdown(promo, now);
-    const isExpired = app.isPromoExpired(promo, now);
-
-    card.innerHTML = `
-      <div class="promo-card-image-wrap">
-        <img class="promo-card-image" src="${imageUrl}" alt="${promo.title || 'Promoción'}" loading="lazy">
-        <span class="promo-badge-city">📍 ${cityName}</span>
-        <span class="promo-badge-city promo-badge-countdown ${isExpired ? 'is-expired' : ''}" data-promo-id="${promo.id}">${countdownText}</span>
-      </div>
-      <div class="promo-card-body">
-        <div class="promo-card-business-row">
-          <div class="promo-card-business">
-            ${bizLogoHtml}
-            <span class="promo-business-name">${bizName}</span>
-          </div>
-          ${storeBtnHtml}
-        </div>
-        <h3 class="promo-card-title">${promo.title || 'Oferta Especial'}</h3>
-        <p class="promo-card-desc">${promo.description || ''}</p>
-        <div class="promo-card-footer">
-          <span class="clicks-counter">🔥 ${promo.whatsappClicks || 0} interesados</span>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <button class="promo-card-share-btn" onclick="event.stopPropagation(); app.sharePromoById('${promo.id}')" title="Compartir">
-              <svg class="icon icon-sm" viewBox="0 0 24 24"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/></svg>
-            </button>
-            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); app.openDetail('${promo.id}')">
-              Ver Oferta
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
+    const card = app.createPromoCardElement(promo, now);
     grid.appendChild(card);
   });
 
   app.startCountdownTicker();
+  if (typeof app.renderRecentFlyersForEvents === 'function') {
+    app.renderRecentFlyersForEvents();
+  }
 };
 
 // ==========================================================================
@@ -1726,6 +1764,30 @@ app.handleDeepLink = function() {
           }
         }, 300);
       }
+    } else if (hash.startsWith('#event=')) {
+      const eventId = hash.replace('#event=', '').trim();
+      if (!eventId) return;
+      const event = (app.events || []).find(e => e.id === eventId);
+      if (event) {
+        app.openEventDetail(eventId);
+      } else {
+        let attempts = 0;
+        const interval = setInterval(() => {
+          attempts++;
+          const e = (app.events || []).find(x => x.id === eventId);
+          if (e) {
+            clearInterval(interval);
+            app.openEventDetail(eventId);
+          } else if (attempts >= 15) {
+            clearInterval(interval);
+            if (app.eventsLoaded) {
+              app.openEventDetail(eventId);
+            }
+          }
+        }, 300);
+      }
+    } else if (hash === '#events') {
+      app.showScreen('events');
     }
   } catch (err) {
     console.warn('[7D App] Error procesando enlace directo:', err);
@@ -2183,6 +2245,470 @@ async function uploadFlyerToR2(file) {
 
   return data.url;
 }
+
+// ============================================================================
+// 7DApp — MÓDULO EVENTOS | FASE 1: MOTOR DE OPTIMIZACIÓN Y SUBIDA FOTOGRÁFICA
+// Motor independiente para procesamiento, cola de subida y limpieza de eventos
+// ============================================================================
+
+const EVENT_PHOTO_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB límite original
+const EVENT_PHOTO_MAX_DIMENSION = 1920;             // Límite máx en lado más largo (Full HD)
+const EVENT_PHOTO_WEBP_QUALITY = 0.80;              // Calidad balanceada
+const EVENT_PHOTO_MAX_COUNT = 30;                   // Máximo de fotos por evento
+const EVENT_PHOTO_MAX_CONCURRENCY = 3;              // Cargas simultáneas
+const EVENT_PHOTO_ALLOWED_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp'
+];
+
+/**
+ * Valida formato y tamaño del archivo original de fotografía para eventos.
+ */
+function validateEventPhotoFile(file) {
+  if (!file) {
+    return { valid: false, error: 'No se proporcionó ningún archivo.' };
+  }
+
+  const fileType = (file.type || '').toLowerCase();
+  const fileName = (file.name || '').toLowerCase();
+  const hasValidExt = /\.(jpe?g|png|webp)$/i.test(fileName);
+  const isAllowedType = EVENT_PHOTO_ALLOWED_TYPES.includes(fileType) || hasValidExt;
+
+  if (!isAllowedType) {
+    return {
+      valid: false,
+      error: `Formato no compatible (${fileType || fileName}). Solo se admiten JPG, JPEG, PNG y WebP.`
+    };
+  }
+
+  if (file.size > EVENT_PHOTO_MAX_FILE_SIZE) {
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    return {
+      valid: false,
+      error: `La fotografía supera el límite máximo de 10 MB (peso detectado: ${sizeMB} MB).`
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Procesa individualmente una imagen: redimensiona (lado máx 1920px sin ampliar),
+ * comprime a WebP (~0.80) y libera canvas y ObjectURL.
+ */
+function processEventPhotoToWebP(file, customMaxDimension = EVENT_PHOTO_MAX_DIMENSION, customQuality = EVENT_PHOTO_WEBP_QUALITY) {
+  return new Promise((resolve, reject) => {
+    const validation = validateEventPhotoFile(file);
+    if (!validation.valid) {
+      reject(new Error(validation.error));
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      try {
+        const origWidth = img.naturalWidth || img.width;
+        const origHeight = img.naturalHeight || img.height;
+
+        if (!origWidth || !origHeight) {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('Dimensiones de imagen inválidas.'));
+          return;
+        }
+
+        // Calcular escala: no ampliar imágenes pequeñas, limitar lado más largo a 1920px
+        let targetWidth = origWidth;
+        let targetHeight = origHeight;
+        const longestSide = Math.max(origWidth, origHeight);
+
+        if (longestSide > customMaxDimension) {
+          const ratio = customMaxDimension / longestSide;
+          targetWidth = Math.round(origWidth * ratio);
+          targetHeight = Math.round(origHeight * ratio);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('No se pudo inicializar el contexto de procesamiento 2D.'));
+          return;
+        }
+
+        // Suavizado de imagen en el renderizado
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+        canvas.toBlob((blob) => {
+          // Liberación estricta de memoria temporal
+          URL.revokeObjectURL(objectUrl);
+          canvas.width = 0;
+          canvas.height = 0;
+
+          if (!blob) {
+            reject(new Error('Fallo al generar el archivo WebP optimizado.'));
+            return;
+          }
+
+          resolve({
+            blob,
+            originalName: file.name,
+            originalSize: file.size,
+            optimizedSize: blob.size,
+            width: targetWidth,
+            height: targetHeight,
+            mimeType: 'image/webp'
+          });
+        }, 'image/webp', customQuality);
+      } catch (err) {
+        URL.revokeObjectURL(objectUrl);
+        reject(err);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(`No se pudo leer la imagen "${file.name}".`));
+    };
+
+    img.src = objectUrl;
+  });
+}
+
+/**
+ * Sube una fotografía individual procesada al Worker de Cloudflare R2 existente.
+ */
+async function uploadEventPhotoToR2(photoBlob, originalFileName = 'evento.webp', customUploadUrl = R2_UPLOAD_URL) {
+  const formData = new FormData();
+  const safeName = (originalFileName || 'evento')
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[^a-zA-Z0-9_-]/g, '_') + '.webp';
+
+  formData.append('file', photoBlob, safeName);
+
+  const response = await fetch(customUploadUrl, {
+    method: 'POST',
+    body: formData
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || !data.ok || !data.url) {
+    throw new Error(data.error || `Error al subir la fotografía a R2 (HTTP ${response.status}).`);
+  }
+
+  // Extraer la ruta/clave del objeto a partir de la URL de forma segura
+  let r2Key = null;
+  try {
+    const parsed = new URL(data.url);
+    r2Key = parsed.pathname.replace(/^\/+/, '');
+  } catch (_) {
+    r2Key = null;
+  }
+
+  return {
+    url: data.url,
+    r2Key
+  };
+}
+
+/**
+ * Elimina una fotografía de R2 mediante petición DELETE a su URL.
+ */
+async function deleteEventPhotoFromR2(photoUrl) {
+  if (!photoUrl || typeof photoUrl !== 'string') return { success: false, error: 'URL inválida.' };
+
+  try {
+    const response = await fetch(photoUrl, { method: 'DELETE' });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || (data && data.ok === false)) {
+      const is404 = response.status === 404;
+      const errMsg = (data && data.error) || (is404 ? 'HTTP 404: Objeto no encontrado en R2 (requiere conciliación o reintento)' : `Error HTTP ${response.status}`);
+      return {
+        success: false,
+        status: response.status,
+        isNotFound: is404,
+        error: errMsg
+      };
+    }
+
+    return { success: true, status: response.status };
+  } catch (err) {
+    return { success: false, isNetworkError: true, error: err.message || 'Error de red al eliminar foto.' };
+  }
+}
+
+/**
+ * Clase controladora de la cola de procesamiento y subida para el módulo Eventos.
+ * Maneja concurrencia (máx 3), progreso, reintentos y trazabilidad de archivos nuevos vs existentes.
+ */
+class EventPhotoUploadQueue {
+  constructor(options = {}) {
+    this.maxPhotos = options.maxPhotos || EVENT_PHOTO_MAX_COUNT;
+    this.concurrency = options.concurrency || EVENT_PHOTO_MAX_CONCURRENCY;
+    this.uploadUrl = options.uploadUrl || R2_UPLOAD_URL;
+    this.items = []; // Elementos de la sesión
+    this.sessionUploadedUrls = new Set(); // URLs subidas durante la sesión activa
+    this.onProgress = options.onProgress || null; // Callback: ({ completed, total, currentItem, percent }) => {}
+    this.isProcessing = false;
+  }
+
+  /**
+   * Carga la lista inicial de fotos (fotografías existentes en Firestore)
+   */
+  setExistingPhotos(photos = []) {
+    this.items = (photos || []).map((p, idx) => ({
+      tempId: p.id || `existing_${idx}_${Date.now()}`,
+      file: null,
+      fileName: p.name || `foto_${idx + 1}.webp`,
+      url: p.url,
+      r2Key: p.r2Key || null,
+      order: typeof p.order === 'number' ? p.order : idx,
+      isNew: false,
+      status: 'completed', // Las existentes ya están completadas
+      error: null
+    }));
+    return this.getItems();
+  }
+
+  /**
+   * Agrega nuevas fotografías a la cola respetando el límite máximo de 30.
+   */
+  addFiles(files = []) {
+    const currentCount = this.items.length;
+    const availableSlots = this.maxPhotos - currentCount;
+
+    if (availableSlots <= 0) {
+      throw new Error(`Se ha alcanzado el límite máximo de ${this.maxPhotos} fotografías por evento.`);
+    }
+
+    const filesToAdd = Array.from(files).slice(0, availableSlots);
+    const addedItems = [];
+
+    filesToAdd.forEach((file) => {
+      const order = this.items.length;
+      const tempId = `new_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const item = {
+        tempId,
+        file,
+        fileName: file.name,
+        url: null,
+        r2Key: null,
+        order,
+        isNew: true,
+        status: 'pending',
+        error: null
+      };
+      this.items.push(item);
+      addedItems.push(item);
+    });
+
+    return {
+      added: addedItems,
+      total: this.items.length,
+      ignoredCount: files.length - filesToAdd.length
+    };
+  }
+
+  /**
+   * Remueve una fotografía de la lista local. Si ya fue subida y es nueva,
+   * no la borra de R2 automáticamente hasta que se ordene explícitamente.
+   */
+  removeItem(tempId) {
+    const idx = this.items.findIndex(i => i.tempId === tempId);
+    if (idx === -1) return null;
+    const removed = this.items.splice(idx, 1)[0];
+    // Reordenar índices
+    this.items.forEach((item, i) => { item.order = i; });
+    return removed;
+  }
+
+  /**
+   * Ejecuta el procesamiento y subida con concurrencia controlada (máx 3 a la vez).
+   * Solo procesa los items pendientes o fallidos.
+   */
+  async processQueue(customProcessor = null, customUploader = null) {
+    if (this.isProcessing) {
+      throw new Error('La cola de subida ya está en ejecución.');
+    }
+
+    this.isProcessing = true;
+    const processor = customProcessor || processEventPhotoToWebP;
+    const uploader = customUploader || ((blob, name) => uploadEventPhotoToR2(blob, name, this.uploadUrl));
+
+    const pendingItems = this.items.filter(i => i.status === 'pending' || i.status === 'failed');
+    let completedCount = this.items.filter(i => i.status === 'completed').length;
+    const totalCount = this.items.length;
+
+    const emitProgress = (currentItem = null) => {
+      if (typeof this.onProgress === 'function') {
+        const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 100;
+        this.onProgress({
+          completed: completedCount,
+          total: totalCount,
+          currentItem,
+          percent
+        });
+      }
+    };
+
+    emitProgress();
+
+    // Pool de ejecución concurrente limitado a this.concurrency
+    let currentIndex = 0;
+
+    const executeWorker = async () => {
+      while (currentIndex < pendingItems.length) {
+        const item = pendingItems[currentIndex++];
+        if (!item || item.status === 'completed') continue;
+
+        try {
+          item.status = 'processing';
+          item.error = null;
+          emitProgress(item);
+
+          // 1. Procesamiento individual Canvas -> WebP 1920px (sin saturar memoria)
+          const processed = await processor(item.file);
+
+          item.status = 'uploading';
+          emitProgress(item);
+
+          // 2. Subida individual al Worker
+          const uploadResult = await uploader(processed.blob, item.fileName);
+
+          item.url = uploadResult.url;
+          item.r2Key = uploadResult.r2Key;
+          item.status = 'completed';
+          item.error = null;
+          this.sessionUploadedUrls.add(uploadResult.url);
+          completedCount++;
+          emitProgress(item);
+        } catch (err) {
+          item.status = 'failed';
+          item.error = err.message || 'Error durante el procesamiento o subida.';
+          console.warn(`[EventPhotoEngine] Error en fotografía "${item.fileName}":`, err.message);
+          emitProgress(item);
+          // Continúa con las demás fotos sin detener la cola
+        }
+      }
+    };
+
+    const workerPromises = [];
+    const activeWorkers = Math.min(this.concurrency, pendingItems.length);
+    for (let w = 0; w < activeWorkers; w++) {
+      workerPromises.push(executeWorker());
+    }
+
+    await Promise.all(workerPromises);
+    this.isProcessing = false;
+    emitProgress();
+
+    return this.getSummary();
+  }
+
+  /**
+   * Reintenta exclusivamente las fotos que hayan fallado.
+   */
+  async retryFailed(customProcessor = null, customUploader = null) {
+    const failedItems = this.items.filter(i => i.status === 'failed');
+    if (failedItems.length === 0) {
+      return this.getSummary();
+    }
+    return this.processQueue(customProcessor, customUploader);
+  }
+
+  /**
+   * Limpia y elimina de R2 exclusivamente los archivos NUEVOS subidos durante esta sesión
+   * (por ejemplo, si el usuario cancela la creación o falla el guardado final en Firestore).
+   * NUNCA toca fotografías existentes pertenecientes a eventos previos.
+   */
+  async cleanupSessionUploadedPhotos(customDeleter = null) {
+    const deleter = customDeleter || deleteEventPhotoFromR2;
+    const deletionResults = [];
+
+    // Identificar fotos nuevas subidas durante la sesión
+    const newUploaded = this.items.filter(i => i.isNew && i.url && this.sessionUploadedUrls.has(i.url));
+
+    for (const item of newUploaded) {
+      const res = await deleter(item.url);
+      deletionResults.push({
+        url: item.url,
+        fileName: item.fileName,
+        success: res.success,
+        error: res.error || null
+      });
+
+      if (res.success) {
+        this.sessionUploadedUrls.delete(item.url);
+      }
+    }
+
+    return deletionResults;
+  }
+
+  getItems() {
+    return this.items.map(i => ({ ...i }));
+  }
+
+  getCompletedPhotos() {
+    return this.items
+      .filter(i => i.status === 'completed' && Boolean(i.url))
+      .map((i, index) => ({
+        id: i.tempId,
+        url: i.url,
+        r2Key: i.r2Key,
+        name: i.fileName,
+        order: index
+      }));
+  }
+
+  getSummary() {
+    const total = this.items.length;
+    const completed = this.items.filter(i => i.status === 'completed').length;
+    const failed = this.items.filter(i => i.status === 'failed').length;
+    const pending = this.items.filter(i => i.status === 'pending').length;
+
+    return {
+      total,
+      completed,
+      failed,
+      pending,
+      allCompleted: total > 0 && completed === total,
+      failedItems: this.items.filter(i => i.status === 'failed').map(i => ({
+        tempId: i.tempId,
+        fileName: i.fileName,
+        error: i.error
+      }))
+    };
+  }
+}
+
+// Exponer el motor en el namespace global app sin alterar nada previo
+app.eventPhotoEngine = {
+  validateFile: validateEventPhotoFile,
+  processToWebP: processEventPhotoToWebP,
+  uploadToR2: uploadEventPhotoToR2,
+  deleteFromR2: deleteEventPhotoFromR2,
+  createQueue: (options) => new EventPhotoUploadQueue(options),
+  CONSTANTS: {
+    MAX_FILE_SIZE: EVENT_PHOTO_MAX_FILE_SIZE,
+    MAX_DIMENSION: EVENT_PHOTO_MAX_DIMENSION,
+    WEBP_QUALITY: EVENT_PHOTO_WEBP_QUALITY,
+    MAX_COUNT: EVENT_PHOTO_MAX_COUNT,
+    MAX_CONCURRENCY: EVENT_PHOTO_MAX_CONCURRENCY,
+    ALLOWED_TYPES: EVENT_PHOTO_ALLOWED_TYPES
+  }
+};
+
 app.proceedToStep2 = function() {
   const name = (document.getElementById('pub-business-name') || {}).value || '';
   const whatsapp = (document.getElementById('pub-whatsapp') || {}).value || '';
@@ -2432,6 +2958,9 @@ try {
       if (typeof app.syncBusinesses === 'function') {
         app.syncBusinesses();
       }
+      if (typeof app.syncEvents === 'function') {
+        app.syncEvents();
+      }
     });
   }
 } catch (err) {
@@ -2521,6 +3050,7 @@ if (tabName === 'expired') app.renderAdminExpired();
   if (tabName === 'cities') app.renderAdminCities();
   if (tabName === 'categories') app.renderAdminCategories();
   if (tabName === 'directory') app.renderAdminDirectory();
+  if (tabName === 'events') app.renderAdminEvents();
   if (tabName === 'settings') app.renderAdminSettings();
 };
 
@@ -2548,6 +3078,8 @@ app.renderAdminDashboard = function() {
   if (bCats) bCats.textContent = app.categories.filter(c => c.active !== false).length;
   const bDirectory = document.getElementById('admin-directory-badge');
   if (bDirectory) bDirectory.textContent = (app.businesses || []).length;
+  const bEvents = document.getElementById('admin-events-badge');
+  if (bEvents) bEvents.textContent = (app.events || []).length;
 
   // Ranking de clics
   const rankingList = document.getElementById('clicks-ranking-container');
@@ -3950,6 +4482,69 @@ app.promotionsLoaded = true;
 
     app.syncBusinesses();
 
+    // 6. Sincronización en tiempo real de Eventos desde la colección 'events'
+    app.syncEvents = function() {
+      if (!db) return;
+      if (app.eventsUnsubscribe) {
+        try { app.eventsUnsubscribe(); } catch(e) {}
+        app.eventsUnsubscribe = null;
+      }
+      try {
+        const query = db.collection(FIRESTORE_EVENTS_COLLECTION);
+        app.eventsUnsubscribe = query.onSnapshot((snapshot) => {
+          if (!snapshot.empty) {
+            const cloudEvents = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data() || {};
+              cloudEvents.push({
+                ...data,
+                id: doc.id
+              });
+            });
+            cloudEvents.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            app.events = cloudEvents;
+            app.eventsLoaded = true;
+            app.eventsLoadError = null;
+            console.log('[Firestore] Eventos sincronizados desde events:', cloudEvents.length);
+          } else {
+            app.events = [];
+            app.eventsLoaded = true;
+            app.eventsLoadError = null;
+            console.log('[Firestore] Colección events vacía o sin registros.');
+          }
+
+          if (app.isAdminLoggedIn) {
+            app.renderAdminEvents();
+            app.renderAdminDashboard();
+          }
+
+          if (typeof app.renderPublicEvents === 'function') {
+            app.renderPublicEvents();
+          }
+          if (typeof app.renderRecentFlyersForEvents === 'function') {
+            app.renderRecentFlyersForEvents();
+          }
+
+          // Si el detalle de un evento está abierto y dejó de estar activo, refrescar vista de detalle
+          if (app.currentScreen === 'event-detail' && app.currentEvent) {
+            const fresh = (app.events || []).find(e => e.id === app.currentEvent.id);
+            if (!fresh || fresh.status !== 'active') {
+              app.openEventDetail(app.currentEvent.id);
+            }
+          }
+        }, (err) => {
+          console.warn('[Firestore] Escucha de events (reglas en verificación o permiso pendiente):', err.message);
+          app.eventsLoaded = true;
+          app.eventsLoadError = err;
+          if (typeof app.renderPublicEvents === 'function') {
+            app.renderPublicEvents();
+          }
+        });
+      } catch(e) {}
+    };
+
+    app.syncEvents();
+
   } catch(err) {
     console.warn('[Firestore] Error en sincronización:', err.message);
   }
@@ -4410,10 +5005,11 @@ if (!app.businesses || app.businesses.length === 0) {
 }
 
 // --------------------------------------------------------------------------
-// 1. Barra de navegación inferior fija (4 accesos)
+// 1. Barra de navegación inferior fija (5 accesos: Eventos, Ofertas, Directorio, Registrar, Publicar)
 // --------------------------------------------------------------------------
 app.updateBottomNav = function(screenName) {
   const navBtns = {
+    'events': document.getElementById('nav-btn-events'),
     'feed': document.getElementById('nav-btn-feed'),
     'directory': document.getElementById('nav-btn-directory'),
     'register-business': document.getElementById('nav-btn-register-business'),
@@ -4424,8 +5020,9 @@ app.updateBottomNav = function(screenName) {
     if (btn) btn.classList.remove('active');
   });
 
-  if (navBtns[screenName]) {
-    navBtns[screenName].classList.add('active');
+  const activeKey = (screenName === 'event-detail') ? 'events' : screenName;
+  if (navBtns[activeKey]) {
+    navBtns[activeKey].classList.add('active');
   }
 };
 
@@ -5214,7 +5811,14 @@ app.handleRegisterBusinessSubmit = async function(event) {
   }
 
   // 2. Construcción del documento público (EXCLUYENDO estrictamente repName, repPhone, repEmail)
-  const bizId = 'biz_' + Date.now();
+  const form = document.getElementById('form-register-business');
+  const bizId = (form && form.dataset && form.dataset.pendingBizId)
+    ? form.dataset.pendingBizId
+    : ('biz_' + Date.now());
+  if (form && form.dataset) {
+    form.dataset.pendingBizId = bizId;
+  }
+
   const publicBusinessData = {
     id: bizId,
     name,
@@ -5259,8 +5863,8 @@ app.handleRegisterBusinessSubmit = async function(event) {
     return;
   }
 
-  // 4. Envío automático de los datos privados del representante (Cloudflare Worker -> Resend API)
-  if (btnSubmit) btnSubmit.textContent = 'Notificando al administrador...';
+  // 4. Envío de datos privados al backend para persistencia privada en D1
+  if (btnSubmit) btnSubmit.textContent = 'Verificando datos privados...';
 
   const representativeData = {
     name: repName,
@@ -5268,68 +5872,134 @@ app.handleRegisterBusinessSubmit = async function(event) {
     email: repEmail
   };
 
-  let notifyResult = { ok: false };
   const notifyPayload = JSON.stringify({
     business: publicBusinessData,
     representative: representativeData
   });
 
+  let backendResponse = null;
+  let backendResult = null;
+  let networkError = null;
+
   try {
-    // Intentar primero con el Worker de Cloudflare dedicado
-    let notifyResponse = await fetch(NOTIFICATION_WORKER_URL, {
+    backendResponse = await fetch('/api/business/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: notifyPayload
-    }).catch(() => null);
+    });
 
-    // Si el Worker no responde o falla de red, intentar con el endpoint local del servidor
-    if (!notifyResponse || !notifyResponse.ok) {
-      const fallbackResponse = await fetch('/api/business/register', {
+    if (backendResponse) {
+      try {
+        backendResult = await backendResponse.json();
+      } catch (jsonErr) {
+        backendResult = null;
+      }
+    }
+  } catch (fetchErr) {
+    networkError = fetchErr;
+    console.warn('[Backend] Error de conexión al registrar datos privados:', fetchErr);
+  }
+
+  // Comprobar inequívocamente el estado HTTP y el valor 'stored' de la persistencia privada
+  const isStoredSuccessfully = Boolean(
+    backendResponse &&
+    backendResponse.ok &&
+    backendResult &&
+    backendResult.stored === true
+  );
+
+  // Mecanismo de contingencia para notificación de emergencia si el backend no respondió por red
+  // IMPORTANTE: Este intento NUNCA modifica isStoredSuccessfully ni valida la persistencia privada
+  if (!backendResponse && networkError) {
+    try {
+      await fetch(NOTIFICATION_WORKER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: notifyPayload
       }).catch(() => null);
-      if (fallbackResponse) {
-        notifyResponse = fallbackResponse;
-      }
-    }
-
-    if (notifyResponse) {
-      notifyResult = await notifyResponse.json().catch(() => ({}));
-    }
-  } catch (notifyErr) {
-    console.warn('[Notificación] Error al contactar servicio de notificación:', notifyErr);
+    } catch (_) {}
   }
 
-  // 5. Actualización en memoria local para feedback inmediato del usuario
-  app.businesses.unshift({
-    ...publicBusinessData,
-    representative: representativeData
-  });
+  // --------------------------------------------------------------------------
+  // CASO DE ÉXITO COMPLETO: Firestore y Backend privado confirmados
+  // --------------------------------------------------------------------------
+  if (isStoredSuccessfully) {
+    if (form) {
+      if (form.dataset) delete form.dataset.pendingBizId;
+      form.reset();
+    }
+    app.removeLogo();
+    app.removeCover();
+    resetSubmitBtn();
 
-  // Limpiar formulario y resetear estados
-  const form = document.getElementById('form-register-business');
-  if (form) form.reset();
-  app.removeLogo();
-  app.removeCover();
+    // Actualización en memoria local para feedback inmediato (solo datos comerciales públicos, NUNCA datos privados)
+    app.businesses.unshift(publicBusinessData);
 
+    app.showToast('✨ ¡Comercio registrado con éxito! Datos del representante verificados y protegidos.');
+
+    // Refrescar vistas
+    app.renderDirectory();
+    if (app.isAdminLoggedIn) {
+      app.renderAdminDirectory();
+    }
+
+    app.showScreen('directory');
+    return;
+  }
+
+  // --------------------------------------------------------------------------
+  // CASO DE REGISTRO INCOMPLETO / FALLO DE PERSISTENCIA PRIVADA (FAIL-CLOSED)
+  // --------------------------------------------------------------------------
   resetSubmitBtn();
 
-  if (notifyResult.emailSent) {
-    app.showToast('✨ ¡Comercio registrado con éxito! Datos del representante notificados.');
-  } else if (notifyResult.warning === 'RESEND_API_KEY_NOT_CONFIGURED') {
-    app.showToast('✨ ¡Comercio registrado en Firestore! (Correo en espera de configuración Resend)');
-  } else {
-    app.showToast('✨ ¡Comercio registrado en Firestore con estado pendiente!');
+  let reasonDetail = 'El servidor no pudo confirmar el almacenamiento privado.';
+  if (backendResponse) {
+    if (backendResponse.status === 503 || (backendResult && backendResult.code === 'PERSISTENT_STORAGE_NOT_CONFIGURED')) {
+      reasonDetail = 'El almacenamiento privado persistente (Cloudflare D1) no está configurado en el servidor.';
+    } else if (backendResponse.status === 500) {
+      reasonDetail = 'Error interno en la base de datos de persistencia privada del servidor.';
+    } else if (backendResponse.status >= 400) {
+      reasonDetail = `Error en el servicio del backend (HTTP ${backendResponse.status}).`;
+    } else if (backendResult && backendResult.stored === false) {
+      reasonDetail = 'El servidor rechazó el almacenamiento de los datos privados.';
+    } else {
+      reasonDetail = 'La respuesta del servidor no confirmó la persistencia privada.';
+    }
+  } else if (networkError) {
+    reasonDetail = 'No se pudo establecer conexión con el servidor para persistir los datos privados.';
   }
 
-  // Refrescar vistas
-  app.renderDirectory();
-  if (app.isAdminLoggedIn) {
-    app.renderAdminDirectory();
+  const incompleteWarning = `⚠️ Registro incompleto: La ficha pública fue registrada con ID "${bizId}", pero los datos privados del representante no quedaron confirmados (${reasonDetail}). Se requiere revisión administrativa.`;
+  console.warn('[Registro Comercial]', incompleteWarning, {
+    bizId,
+    status: backendResponse ? backendResponse.status : 'network_error',
+    backendResult
+  });
+
+  // Mostrar mensaje de advertencia claro en el formulario (errBox) sin afirmar éxito completo
+  if (errBox) {
+    errBox.innerHTML = `
+      <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px; color: #b91c1c;">⚠️ Registro Comercial Incompleto</div>
+      <div style="font-size: 13px; line-height: 1.4; margin-bottom: 8px; color: #7f1d1d;">
+        La ficha pública fue registrada con el identificador <code>${bizId}</code>, pero los datos privados del representante <strong>no quedaron confirmados</strong> en el almacenamiento seguro (${reasonDetail}).
+      </div>
+      <div style="font-size: 12px; line-height: 1.4; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px; color: #374151;">
+        📌 <strong>Acción requerida:</strong> Se requiere revisión administrativa para verificar este comercio y habilitar cupones. Por favor conserva el ID <code>${bizId}</code> y comunícate con administración. Para evitar duplicados, no vuelvas a enviar la solicitud.
+      </div>
+    `;
+    errBox.style.display = 'block';
+    if (typeof errBox.scrollIntoView === 'function') {
+      errBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   }
 
-  app.showScreen('directory');
+  // Notificación toast de advertencia (NUNCA éxito completo)
+  app.showToast(`⚠️ Registro incompleto (ID: ${bizId}): datos privados pendientes de confirmación administrativa.`);
+
+  // Mantener coherencia en memoria local para el directorio público (exclusivamente datos públicos, sin datos privados)
+  if (!app.businesses.some(b => b.id === bizId)) {
+    app.businesses.unshift(publicBusinessData);
+  }
 };
 
 // --------------------------------------------------------------------------
@@ -6074,6 +6744,1443 @@ app.handleAdminEditBusinessSubmit = async function(event) {
 };
 
 // ==========================================================================
+// 14.4. MÓDULO EVENTOS — FASE 2.2: GESTIÓN ADMINISTRATIVA, RESILIENCIA Y PURGA
+// ==========================================================================
+
+const PENDING_R2_DELETIONS_STORAGE_KEY = '7d_pending_r2_deletions';
+
+// Respaldo en memoria temporal de sesión ante fallos de persistencia en localStorage (H-2.5-02)
+app.sessionUnpersistedDeletionsQueue = app.sessionUnpersistedDeletionsQueue || [];
+
+// Mutex de exclusión mutua por URL para serializar la purga de fotografías compartidas entre eventos (H-2.5-01)
+app.urlPurgeMutexes = app.urlPurgeMutexes || new Map();
+
+app.withUrlPurgeLock = async function(url, action) {
+  if (!url) return action();
+  while (app.urlPurgeMutexes.has(url)) {
+    await app.urlPurgeMutexes.get(url);
+  }
+  let release;
+  const promise = new Promise(resolve => { release = resolve; });
+  app.urlPurgeMutexes.set(url, promise);
+  try {
+    return await action();
+  } finally {
+    app.urlPurgeMutexes.delete(url);
+    release();
+  }
+};
+
+app.getPendingR2Deletions = function() {
+  try {
+    const raw = localStorage.getItem(PENDING_R2_DELETIONS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (_) {
+    return [];
+  }
+};
+
+app.savePendingR2Deletions = function(list) {
+  try {
+    localStorage.setItem(PENDING_R2_DELETIONS_STORAGE_KEY, JSON.stringify(list || []));
+    return true;
+  } catch (err) {
+    console.warn('[R2 Queue] Error al persistir cola local en localStorage:', err);
+    return false;
+  }
+};
+
+app.enqueuePendingR2Deletions = function(photos, eventId, operationType = 'edit_removal') {
+  const current = app.getPendingR2Deletions();
+  const existingUrls = new Set(current.map(item => item.url));
+  let addedCount = 0;
+
+  // 1. Incorporar cualquier elemento pendiente en memoria de sesión no registrado en current
+  if (Array.isArray(app.sessionUnpersistedDeletionsQueue) && app.sessionUnpersistedDeletionsQueue.length > 0) {
+    app.sessionUnpersistedDeletionsQueue.forEach(item => {
+      if (item && item.url && !existingUrls.has(item.url)) {
+        current.push(item);
+        existingUrls.add(item.url);
+        addedCount++;
+      }
+    });
+  }
+
+  // 2. Incorporar las nuevas fotos proporcionadas
+  if (Array.isArray(photos) && photos.length > 0) {
+    photos.forEach(photo => {
+      if (photo && photo.url && !existingUrls.has(photo.url)) {
+        current.push({
+          id: `del_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          url: photo.url,
+          photoName: photo.name || photo.fileName || '',
+          eventId: eventId || '',
+          operationType: operationType, // 'edit_removal' | 'failed_purge'
+          registeredAt: Date.now(),
+          status: 'pending', // 'pending' | 'failed' | 'protected'
+          attempts: 0,
+          lastAttemptAt: null,
+          lastError: null
+        });
+        existingUrls.add(photo.url);
+        addedCount++;
+      }
+    });
+  }
+
+  // 3. Intentar persistir en localStorage
+  if (current.length > 0) {
+    const persisted = app.savePendingR2Deletions(current);
+    if (!persisted) {
+      console.warn('[R2 Queue] Falló la persistencia en localStorage. Conservando en cola temporal de sesión en memoria.');
+      // Conservar los registros en la cola de sesión en memoria
+      current.forEach(item => {
+        if (!app.sessionUnpersistedDeletionsQueue.some(i => i.url === item.url)) {
+          app.sessionUnpersistedDeletionsQueue.push(item);
+        }
+      });
+      return { success: false, count: addedCount, persisted: false, queue: current, inMemoryQueue: app.sessionUnpersistedDeletionsQueue };
+    } else {
+      // Persistencia exitosa: vaciar la cola temporal de sesión en memoria
+      app.sessionUnpersistedDeletionsQueue = [];
+      console.log(`[R2 Queue] ${addedCount} foto(s) añadidas y persistidas exitosamente en localStorage.`);
+    }
+  }
+
+  return { success: true, count: addedCount, persisted: true, queue: current };
+};
+
+app.dismissPendingR2Deletion = function(deletionId) {
+  if (!deletionId) return;
+  const current = app.getPendingR2Deletions();
+  const item = current.find(i => i.id === deletionId);
+  if (!item) return;
+
+  const photoLabel = item.photoName || item.url;
+  const proceed = confirm(`¿Deseas descartar de la cola local de purga la fotografía "${photoLabel}"?\n\nEsta fotografía continuará preservada en su evento correspondiente. Al descartarla, solo se retira del registro local y NUNCA se eliminará el archivo físico de R2.`);
+  if (!proceed) return;
+
+  const filtered = current.filter(i => i.id !== deletionId);
+  app.savePendingR2Deletions(filtered);
+
+  if (Array.isArray(app.sessionUnpersistedDeletionsQueue)) {
+    app.sessionUnpersistedDeletionsQueue = app.sessionUnpersistedDeletionsQueue.filter(i => i.id !== deletionId);
+  }
+
+  app.renderAdminEvents();
+  app.showToast('✅ Registro descartado de la cola local de purga.');
+};
+
+app.processPendingR2DeletionsQueue = async function() {
+  if (app.isProcessingR2Deletions) return { remaining: 0, successCount: 0 };
+  app.isProcessingR2Deletions = true;
+
+  try {
+    // Si existen elementos retenidos en memoria de sesión por fallos previos, intentar sincronizarlos primero
+    if (Array.isArray(app.sessionUnpersistedDeletionsQueue) && app.sessionUnpersistedDeletionsQueue.length > 0) {
+      const syncRes = app.enqueuePendingR2Deletions([], '', 'session_flush');
+      if (!syncRes.persisted) {
+        console.warn('[R2 Queue] No se puede procesar la purga física mientras localStorage siga inaccesible.');
+        if (typeof app.renderAdminEvents === 'function') app.renderAdminEvents();
+        return { remaining: app.sessionUnpersistedDeletionsQueue.length, successCount: 0, storageError: true };
+      }
+    }
+
+    const current = app.getPendingR2Deletions();
+    if (current.length === 0) return { remaining: 0, successCount: 0 };
+
+    // Protección estricta: construir el conjunto de URLs referenciadas por TODOS los eventos
+    // Incluyendo estados 'active', 'draft', 'archived' y 'deleting' sin excepción (H-2.3-04)
+    const referencedUrls = new Set();
+    (app.events || []).forEach(evt => {
+      if (Array.isArray(evt.photos)) {
+        evt.photos.forEach(p => {
+          if (p && p.url) referencedUrls.add(p.url);
+        });
+      }
+    });
+
+    const updatedQueue = [];
+    let successCount = 0;
+
+    for (const item of current) {
+      // Si la fotografía sigue referenciada en cualquier evento, conservarla en la cola marcada como protegida
+      if (referencedUrls.has(item.url)) {
+        console.warn('[R2 Queue] Omitiendo foto de cola porque sigue referenciada en un evento existente (activo, borrador, archivado o en eliminación):', item.url);
+        item.status = 'protected';
+        item.lastError = 'Protegida: La fotografía sigue referenciada en otro evento existente en la plataforma.';
+        updatedQueue.push(item);
+        continue;
+      }
+
+      item.attempts = (item.attempts || 0) + 1;
+      item.lastAttemptAt = Date.now();
+
+      try {
+        const res = await app.eventPhotoEngine.deleteFromR2(item.url);
+        if (res && res.success) {
+          successCount++;
+          // Al confirmar éxito, la foto no se añade a updatedQueue (se purga del registro)
+        } else {
+          item.status = 'failed';
+          item.lastError = (res && res.error) || 'Fallo desconocido en Worker';
+          updatedQueue.push(item);
+        }
+      } catch (err) {
+        item.status = 'failed';
+        item.lastError = err.message || 'Error de conexión';
+        updatedQueue.push(item);
+      }
+    }
+
+    app.savePendingR2Deletions(updatedQueue);
+    if (typeof app.renderAdminEvents === 'function') {
+      app.renderAdminEvents();
+    }
+
+    return {
+      remaining: updatedQueue.length,
+      successCount
+    };
+  } finally {
+    app.isProcessingR2Deletions = false;
+  }
+};
+
+app.renderAdminEvents = function() {
+  const container = document.getElementById('admin-events-list');
+  if (!container) return;
+
+  const events = app.events || [];
+  const badge = document.getElementById('admin-events-badge');
+  if (badge) badge.textContent = events.length;
+
+  const pendingDeletions = app.getPendingR2Deletions();
+  const sessionQueueCount = (app.sessionUnpersistedDeletionsQueue || []).length;
+
+  let queueAlertHtml = '';
+  if (pendingDeletions.length > 0 || sessionQueueCount > 0) {
+    const protectedItems = pendingDeletions.filter(i => i.status === 'protected');
+    const protectedListHtml = protectedItems.length > 0 ? `
+      <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(245, 158, 11, 0.3); font-size: 12px; width: 100%;">
+        <strong>Fotografías protegidas por referencias en otros eventos:</strong>
+        <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px;">
+          ${protectedItems.map(item => `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.25); padding: 4px 8px; border-radius: 4px; gap: 8px;">
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%;" title="${item.url}">
+                🔒 ${item.photoName || item.url}
+              </span>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="app.dismissPendingR2Deletion('${item.id}')" style="font-size: 11px; padding: 2px 8px;" title="Descartar de la cola local sin borrar el archivo físico">
+                ✕ Descartar
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : '';
+
+    const sessionWarningHtml = sessionQueueCount > 0 ? `
+      <div style="font-size: 12px; color: #ef4444; margin-top: 4px;">
+        ⚠️ Almacenamiento local bloqueado: ${sessionQueueCount} foto(s) retiradas retenidas en memoria temporal de sesión esperando persistencia.
+      </div>
+    ` : '';
+
+    queueAlertHtml = `
+      <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div style="font-size: 13px; color: #f59e0b; flex: 1; min-width: 250px;">
+          <strong>⚠️ Cola local de recuperación:</strong> ${pendingDeletions.length} fotografía(s) en cola de purga R2.
+          ${sessionWarningHtml}
+        </div>
+        <button class="btn btn-sm btn-secondary" onclick="app.processPendingR2DeletionsQueue()" style="border-color: #f59e0b; color: #f59e0b;">
+          🔄 Procesar Cola de Purga
+        </button>
+        ${protectedListHtml}
+      </div>
+    `;
+  }
+
+  if (events.length === 0) {
+    container.innerHTML = `
+      ${queueAlertHtml}
+      <div style="text-align: center; padding: 48px 20px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);">
+        <div style="font-size: 42px; margin-bottom: 12px;">📸</div>
+        <h4 style="margin: 0 0 8px 0; color: #FFFFFF; font-size: 16px;">No hay eventos registrados</h4>
+        <p style="color: var(--text-secondary); font-size: 13px; max-width: 440px; margin: 0 auto 20px auto; line-height: 1.5;">
+          Publica el primer evento social o corporativo con reseña editorial y una galería de hasta 30 fotografías optimizadas en alta fidelidad.
+        </p>
+        <button class="btn btn-primary" onclick="app.openAdminEventModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+          <span>➕</span> Crear Primer Evento
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = queueAlertHtml;
+  events.forEach((evt) => {
+    const card = document.createElement('div');
+    card.className = 'admin-event-card';
+
+    const isDeleting = evt.status === 'deleting';
+    const firstPhoto = (evt.photos && evt.photos[0] && evt.photos[0].url) || '';
+    const photoCount = (evt.photos || []).length;
+    const catObj = EVENT_CATEGORIES.find(c => c.id === evt.category) || { label: evt.categoryLabel || evt.category || 'Evento', icon: '🎉' };
+
+    let thumbHtml = '';
+    if (firstPhoto) {
+      thumbHtml = `<img src="${firstPhoto}" class="admin-event-thumb" alt="${evt.title || 'Evento'}" loading="lazy">`;
+    } else {
+      thumbHtml = `
+        <div class="admin-event-thumb" style="font-size: 40px; color: var(--text-secondary);">
+          ${catObj.icon}
+        </div>
+      `;
+    }
+
+    const reviewSnippet = (evt.review || 'Sin reseña editorial registrada.').length > 180
+      ? (evt.review.slice(0, 177) + '...')
+      : (evt.review || '');
+
+    const dateStr = evt.createdAt ? new Date(evt.createdAt).toLocaleDateString('es-VE', {
+      year: 'numeric', month: 'short', day: 'numeric'
+    }) : 'Fecha no registrada';
+
+    let statusBadgeHtml = '';
+    let actionButtonsHtml = '';
+
+    if (isDeleting) {
+      const isPhotosPurged = photoCount === 0;
+      statusBadgeHtml = `
+        <span class="badge" style="background: rgba(239, 68, 68, 0.18); color: #ef4444; font-weight: 700; border: 1px solid rgba(239, 68, 68, 0.35);">
+          ${isPhotosPurged ? '⏳ Fotos purgadas: eliminación final de documento pendiente' : `⏳ Eliminación en curso (${photoCount} foto(s) pendientes)`}
+        </span>
+      `;
+      actionButtonsHtml = `
+        <button class="btn btn-sm btn-secondary" disabled style="opacity: 0.4; cursor: not-allowed;" title="Evento en proceso de purga">
+          ✏️ En Eliminación
+        </button>
+        <button class="btn btn-sm btn-warning" onclick="app.retryPurgeEventPhotos('${evt.id}')" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.35);">
+          ${isPhotosPurged ? '🔄 Reintentar Eliminación de Documento' : `🔄 Reintentar Purga (${photoCount})`}
+        </button>
+      `;
+    } else {
+      statusBadgeHtml = `
+        <span class="badge" style="background: rgba(85, 201, 154, 0.15); color: #55c99a; font-weight: 700;">
+          ${catObj.icon} ${catObj.label}
+        </span>
+        <span class="badge" style="background: rgba(255, 255, 255, 0.08); color: var(--text-secondary);">
+          📸 ${photoCount} / 30 fotos
+        </span>
+      `;
+      actionButtonsHtml = `
+        <button class="btn btn-sm btn-secondary" onclick="app.openAdminEventModal('${evt.id}')">
+          ✏️ Editar Evento
+        </button>
+        <button class="btn btn-sm btn-danger-subtle" onclick="app.confirmDeleteAdminEvent('${evt.id}')">
+          🗑️ Eliminar
+        </button>
+      `;
+    }
+
+    card.innerHTML = `
+      ${thumbHtml}
+      <div class="admin-event-body">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap;">
+          <div>
+            <h4 style="margin: 0 0 6px 0; color: #FFFFFF; font-size: 16px;">${evt.title || 'Evento sin título'}</h4>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              ${statusBadgeHtml}
+              <span style="font-size: 11px; color: var(--text-muted);">
+                📅 ${dateStr}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 4px 0 0 0;">
+          ${reviewSnippet}
+        </p>
+
+        <div class="admin-event-actions">
+          ${actionButtonsHtml}
+        </div>
+      </div>
+    `;
+
+    container.appendChild(card);
+  });
+};
+
+app.clearEventPreviewUrls = function() {
+  if (app.eventPreviewUrls && app.eventPreviewUrls.size > 0) {
+    app.eventPreviewUrls.forEach(url => {
+      try { URL.revokeObjectURL(url); } catch (_) {}
+    });
+    app.eventPreviewUrls.clear();
+  }
+};
+
+app.openAdminEventModal = function(eventId = null) {
+  if (!app.isAdminLoggedIn) {
+    alert('Debes iniciar sesión como administrador para gestionar eventos.');
+    return;
+  }
+
+  app.clearEventPreviewUrls();
+  app.removedExistingPhotos = [];
+  // Instanciar cola con concurrencia de 1 para protección estricta de memoria en móviles
+  app.activeEventQueue = app.eventPhotoEngine.createQueue({
+    concurrency: 1,
+    maxPhotos: 30
+  });
+
+  // Configurar seguimiento reactivo de progreso
+  app.activeEventQueue.onProgress = function({ completed, total, currentItem, percent }) {
+    const box = document.getElementById('event-upload-progress-box');
+    const label = document.getElementById('event-upload-progress-label');
+    const percentEl = document.getElementById('event-upload-progress-percent');
+    const bar = document.getElementById('event-upload-progress-bar');
+    if (box && label && percentEl && bar) {
+      if (app.activeEventQueue && app.activeEventQueue.isProcessing) {
+        box.style.display = 'block';
+        percentEl.textContent = `${percent}%`;
+        bar.style.width = `${percent}%`;
+        if (currentItem) {
+          const actionText = currentItem.status === 'processing' ? 'Optimizando (WebP)' : 'Subiendo a R2';
+          label.textContent = `${actionText} (${completed + 1}/${total}): ${currentItem.fileName}`;
+        } else {
+          label.textContent = `Procesando fotografías (${completed}/${total})...`;
+        }
+      } else {
+        if (percent === 100) {
+          label.textContent = `¡Procesamiento completado! (${completed}/${total})`;
+          setTimeout(() => { if (box) box.style.display = 'none'; }, 2000);
+        }
+      }
+    }
+    app.renderEventPhotoGrid();
+  };
+
+  const titleEl = document.getElementById('modal-event-title');
+  const idInput = document.getElementById('event-id');
+  const titleInput = document.getElementById('event-title-input');
+  const catInput = document.getElementById('event-category-input');
+  const reviewInput = document.getElementById('event-review-input');
+  const errBox = document.getElementById('event-form-error');
+  const progressBox = document.getElementById('event-upload-progress-box');
+
+  if (errBox) errBox.style.display = 'none';
+  if (progressBox) progressBox.style.display = 'none';
+
+  if (eventId) {
+    const evt = (app.events || []).find(e => e.id === eventId);
+    if (!evt) {
+      alert('No se encontró el evento especificado.');
+      return;
+    }
+    if (evt.status === 'deleting') {
+      alert('Este evento está en proceso de eliminación y no puede ser editado.');
+      return;
+    }
+
+    app.currentEditingEventId = eventId;
+    if (titleEl) titleEl.textContent = '✏️ Editar Evento';
+    if (idInput) idInput.value = evt.id;
+    if (titleInput) titleInput.value = evt.title || '';
+    if (catInput) catInput.value = evt.category || '';
+    if (reviewInput) reviewInput.value = evt.review || '';
+
+    // Cargar fotos existentes en la cola con isNew: false
+    app.activeEventQueue.setExistingPhotos(evt.photos || []);
+  } else {
+    app.currentEditingEventId = null;
+    if (titleEl) titleEl.textContent = '📸 Nuevo Evento';
+    if (idInput) idInput.value = '';
+    if (titleInput) titleInput.value = '';
+    if (catInput) catInput.value = '';
+    if (reviewInput) reviewInput.value = '';
+  }
+
+  app.renderEventPhotoGrid();
+
+  const modal = document.getElementById('modal-admin-event');
+  if (modal) modal.classList.add('active');
+};
+
+app.closeAdminEventModal = async function(confirmCancel = true) {
+  if (confirmCancel && app.activeEventQueue) {
+    const hasUploadedNew = app.activeEventQueue.sessionUploadedUrls.size > 0;
+    const titleVal = (document.getElementById('event-title-input') || {}).value || '';
+    const hasItems = app.activeEventQueue.items.length > 0;
+
+    if (hasUploadedNew) {
+      const proceed = confirm('¿Deseas cancelar? Las fotografías nuevas que se subieron durante esta sesión se eliminarán de R2.');
+      if (!proceed) return;
+      app.showToast('⏳ Limpiando fotografías temporales...');
+      try {
+        await app.activeEventQueue.cleanupSessionUploadedPhotos();
+      } catch (err) {
+        console.warn('[EventPhotoEngine] Error durante limpieza de sesión:', err);
+      }
+    } else if (titleVal.trim() || hasItems) {
+      if (!confirm('¿Estás seguro de cerrar el formulario? Se perderán los cambios no guardados.')) {
+        return;
+      }
+    }
+  }
+
+  app.clearEventPreviewUrls();
+  app.activeEventQueue = null;
+  app.currentEditingEventId = null;
+  app.removedExistingPhotos = [];
+
+  const modal = document.getElementById('modal-admin-event');
+  if (modal) modal.classList.remove('active');
+};
+
+app.handleEventPhotoSelect = function(event) {
+  const files = Array.from((event.target && event.target.files) || []);
+  if (!files.length || !app.activeEventQueue) return;
+
+  const validFiles = [];
+  let firstError = null;
+
+  for (const file of files) {
+    const val = app.eventPhotoEngine.validateFile(file);
+    if (val.valid) {
+      validFiles.push(file);
+    } else if (!firstError) {
+      firstError = `${file.name}: ${val.error}`;
+    }
+  }
+
+  if (firstError) {
+    app.showToast(`⚠️ ${firstError}`);
+  }
+
+  if (validFiles.length > 0) {
+    try {
+      const addRes = app.activeEventQueue.addFiles(validFiles);
+
+      // Crear ObjectURLs para preview ligero (solo de las fotos recién añadidas)
+      addRes.added.forEach((item) => {
+        if (item.file && !item.previewUrl) {
+          const prevUrl = URL.createObjectURL(item.file);
+          item.previewUrl = prevUrl;
+          app.eventPreviewUrls.add(prevUrl);
+        }
+      });
+
+      if (addRes.ignoredCount > 0) {
+        app.showToast(`⚠️ Se admitieron fotos hasta el límite máximo de 30. Se ignoraron ${addRes.ignoredCount} archivo(s) excedentes.`);
+      }
+    } catch (err) {
+      app.showToast(`⚠️ ${err.message}`);
+    }
+  }
+
+  event.target.value = '';
+  app.renderEventPhotoGrid();
+};
+
+app.renderEventPhotoGrid = function() {
+  const grid = document.getElementById('event-photos-grid');
+  const countBadge = document.getElementById('event-photo-count-badge');
+  const retryBtn = document.getElementById('event-retry-btn');
+  if (!grid) return;
+
+  const queue = app.activeEventQueue;
+  const items = queue ? queue.items : [];
+
+  if (countBadge) {
+    countBadge.textContent = `${items.length} / 30 fotos`;
+  }
+
+  const hasFailed = items.some(i => i.status === 'failed');
+  if (retryBtn) {
+    retryBtn.style.display = hasFailed ? 'inline-block' : 'none';
+  }
+
+  if (items.length === 0) {
+    grid.innerHTML = `
+      <div id="event-photos-empty" style="grid-column: 1 / -1; text-align: center; color: var(--text-secondary); padding: 24px 0; font-size: 13px;">
+        No hay fotografías seleccionadas para este evento.
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = '';
+  items.forEach((item, index) => {
+    const card = document.createElement('div');
+    card.className = 'event-photo-item';
+
+    const imgSrc = item.url || item.previewUrl || '';
+
+    let statusText = '⏳ Pendiente';
+    let statusClass = 'pending';
+    if (item.status === 'completed') {
+      statusText = '✅ Lista';
+      statusClass = 'completed';
+    } else if (item.status === 'processing') {
+      statusText = '⚙️ WebP';
+      statusClass = 'processing';
+    } else if (item.status === 'uploading') {
+      statusText = '☁️ R2';
+      statusClass = 'uploading';
+    } else if (item.status === 'failed') {
+      statusText = '❌ Error';
+      statusClass = 'failed';
+    }
+
+    const titleAttr = item.error ? `title="${item.error}"` : `title="${item.fileName}"`;
+
+    const isFirst = index === 0;
+    const isLast = index === items.length - 1;
+
+    card.innerHTML = `
+      <div class="event-photo-thumb-wrap" ${titleAttr}>
+        ${imgSrc ? `<img src="${imgSrc}" class="event-photo-thumb" alt="${item.fileName}">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#fff;">📷</div>`}
+        <span class="event-photo-badge-order">#${index + 1}</span>
+        <span class="event-photo-badge-status ${statusClass}">${statusText}</span>
+      </div>
+      <div class="event-photo-actions">
+        <button type="button" class="event-photo-btn" onclick="app.moveEventPhoto('${item.tempId}', -1)" ${isFirst ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''} title="Mover hacia arriba / adelante">
+          ⬅️
+        </button>
+        <button type="button" class="event-photo-btn" onclick="app.moveEventPhoto('${item.tempId}', 1)" ${isLast ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''} title="Mover hacia abajo / atrás">
+          ➡️
+        </button>
+        <button type="button" class="event-photo-btn remove" onclick="app.removeEventPhoto('${item.tempId}')" title="Retirar fotografía">
+          🗑️
+        </button>
+      </div>
+    `;
+
+    grid.appendChild(card);
+  });
+};
+
+app.moveEventPhoto = function(tempId, direction) {
+  if (!app.activeEventQueue) return;
+  const items = app.activeEventQueue.items;
+  const idx = items.findIndex(i => i.tempId === tempId);
+  if (idx === -1) return;
+
+  const targetIdx = idx + direction;
+  if (targetIdx < 0 || targetIdx >= items.length) return;
+
+  const temp = items[idx];
+  items[idx] = items[targetIdx];
+  items[targetIdx] = temp;
+
+  items.forEach((item, i) => { item.order = i; });
+  app.renderEventPhotoGrid();
+};
+
+app.removeEventPhoto = function(tempId) {
+  if (!app.activeEventQueue) return;
+  const items = app.activeEventQueue.items;
+  const item = items.find(i => i.tempId === tempId);
+  if (!item) return;
+
+  // Si es una foto existente de un evento previo, registrarla para eliminación posterior
+  // ÚNICAMENTE si se confirma el guardado del evento
+  if (!item.isNew && item.url) {
+    app.removedExistingPhotos.push({ ...item });
+  }
+
+  // Liberar el ObjectURL temporal de previsualización si existía
+  if (item.previewUrl) {
+    try { URL.revokeObjectURL(item.previewUrl); } catch (_) {}
+    app.eventPreviewUrls.delete(item.previewUrl);
+  }
+
+  app.activeEventQueue.removeItem(tempId);
+  app.renderEventPhotoGrid();
+};
+
+app.retryFailedEventPhotos = async function() {
+  if (!app.activeEventQueue || app.activeEventQueue.isProcessing) return;
+  const retryBtn = document.getElementById('event-retry-btn');
+  if (retryBtn) retryBtn.disabled = true;
+
+  try {
+    app.showToast('🔄 Reintentando fotografías con error...');
+    await app.activeEventQueue.retryFailed();
+  } catch (err) {
+    console.warn('[EventPhotoEngine] Error en reintento:', err);
+  } finally {
+    if (retryBtn) retryBtn.disabled = false;
+    app.renderEventPhotoGrid();
+  }
+};
+
+app.handleAdminEventSubmit = async function(event) {
+  event.preventDefault();
+
+  // Bloqueo de reentrancia: evitar dobles envíos y ejecuciones concurrentes
+  if (app.isSubmittingEvent) {
+    console.warn('[Events] Guardado de evento ya en curso, ignorando clic repetido.');
+    return;
+  }
+  if (!app.activeEventQueue) return;
+
+  app.isSubmittingEvent = true;
+  const btnSave = document.getElementById('btn-save-event');
+  const originalBtnText = btnSave ? btnSave.innerHTML : '💾 Guardar Evento';
+  if (btnSave) {
+    btnSave.disabled = true;
+  }
+
+  const errBox = document.getElementById('event-form-error');
+  if (errBox) errBox.style.display = 'none';
+
+  try {
+    const title = (document.getElementById('event-title-input') || {}).value.trim();
+    const category = (document.getElementById('event-category-input') || {}).value;
+    const review = (document.getElementById('event-review-input') || {}).value.trim();
+
+    if (!title) {
+      if (errBox) {
+        errBox.textContent = 'El título del evento es obligatorio.';
+        errBox.style.display = 'block';
+      }
+      return;
+    }
+
+    if (!category) {
+      if (errBox) {
+        errBox.textContent = 'Debes seleccionar una categoría obligatoria para el evento.';
+        errBox.style.display = 'block';
+      }
+      return;
+    }
+
+    if (!review) {
+      if (errBox) {
+        errBox.textContent = 'La reseña o descripción editorial es obligatoria.';
+        errBox.style.display = 'block';
+      }
+      return;
+    }
+
+    const currentItems = app.activeEventQueue.items;
+    if (currentItems.length === 0) {
+      if (errBox) {
+        errBox.textContent = 'Debes agregar al menos una fotografía para la galería del evento.';
+        errBox.style.display = 'block';
+      }
+      return;
+    }
+
+    // Si hay fotos pendientes de procesamiento/subida, procesarlas secuencialmente (1 a la vez)
+    const pendingCount = currentItems.filter(i => i.status === 'pending' || i.status === 'failed').length;
+    if (pendingCount > 0) {
+      if (btnSave) {
+        btnSave.textContent = '⏳ Procesando y subiendo fotos (1 a la vez)...';
+      }
+
+      const summary = await app.activeEventQueue.processQueue();
+      if (summary.failed > 0) {
+        if (errBox) {
+          errBox.textContent = `Hubo un inconveniente al subir ${summary.failed} fotografía(s). Puedes reintentarlas o retirarlas para continuar.`;
+          errBox.style.display = 'block';
+        }
+        return;
+      }
+    }
+
+    const completedPhotos = app.activeEventQueue.getCompletedPhotos();
+    if (completedPhotos.length === 0) {
+      if (errBox) {
+        errBox.textContent = 'No hay fotografías válidas completadas para guardar el evento.';
+        errBox.style.display = 'block';
+      }
+      return;
+    }
+
+    const isEdit = Boolean(app.currentEditingEventId);
+    const eventId = app.currentEditingEventId || `evt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const existingEvt = isEdit ? (app.events || []).find(e => e.id === eventId) : null;
+    const categoryObj = EVENT_CATEGORIES.find(c => c.id === category) || { id: category, label: category };
+    const adminUser = (app.adminAuth && app.adminAuth.currentUser) || {};
+
+    // Preservación estricta del administrador creador y fecha de creación original en ediciones
+    const eventPayload = {
+      id: eventId,
+      title,
+      category,
+      categoryLabel: categoryObj.label,
+      review,
+      photos: completedPhotos,
+      status: (existingEvt && existingEvt.status) || 'active',
+      createdAt: (existingEvt && existingEvt.createdAt) || Date.now(),
+      updatedAt: Date.now(),
+      authorUid: (existingEvt && existingEvt.authorUid) || adminUser.uid || 'admin',
+      authorEmail: (existingEvt && existingEvt.authorEmail) || adminUser.email || 'admin@7dapp.com'
+    };
+
+    if (btnSave) {
+      btnSave.textContent = 'Guardando evento en Firestore...';
+    }
+
+    let savedInFirestore = false;
+    let firestoreErrorReason = null;
+
+    if (db) {
+      try {
+        await db.collection(FIRESTORE_EVENTS_COLLECTION).doc(eventId).set(eventPayload, { merge: true });
+        savedInFirestore = true;
+        console.log('[Firestore] Evento persistido exitosamente en events:', eventId);
+      } catch (dbErr) {
+        console.warn('[Firestore] Error al persistir evento en Firestore:', dbErr);
+        firestoreErrorReason = dbErr.message || 'Fallo de permisos en base de datos.';
+        const isPerm = dbErr.code === 'permission-denied' || (dbErr.message && dbErr.message.includes('permission'));
+        if (isPerm) {
+          firestoreErrorReason = 'La colección "events" aún no cuenta con reglas de escritura configuradas en Firebase para administradores. La persistencia fue detenida de forma segura.';
+        }
+      }
+    } else {
+      firestoreErrorReason = 'Instancia de Cloud Firestore no inicializada.';
+    }
+
+    // Verificación estricta de persistencia: no simular que el guardado funcionó si fue rechazado
+    if (!savedInFirestore) {
+      if (errBox) {
+        errBox.textContent = `⚠️ Error de persistencia: ${firestoreErrorReason}`;
+        errBox.style.display = 'block';
+      }
+      return;
+    }
+
+    // Si el guardado en Firestore tuvo éxito:
+    // 1. Actualizar estado local en memoria para que app.events refleje de inmediato las fotos conservadas
+    const existingIdx = (app.events || []).findIndex(e => e.id === eventId);
+    if (existingIdx !== -1) {
+      app.events[existingIdx] = eventPayload;
+    } else {
+      app.events.unshift(eventPayload);
+    }
+
+    // 2. Descartar la cola de sesión sin ejecutar limpieza de las fotos nuevas
+    app.activeEventQueue = null;
+
+    // 3. Si fue edición y se retiraron fotos existentes, registrar en cola persistente antes de eliminar
+    if (isEdit && app.removedExistingPhotos && app.removedExistingPhotos.length > 0) {
+      const enqueueRes = app.enqueuePendingR2Deletions(app.removedExistingPhotos, eventId, 'edit_removal');
+      app.removedExistingPhotos = [];
+
+      if (!enqueueRes.persisted) {
+        // Si falló la persistencia local (QuotaExceededError, SecurityError, etc.), no iniciar la purga física
+        app.showToast('⚠️ Evento guardado en base de datos, pero la purga física de fotos retiradas quedó pendiente (fallo de almacenamiento local).');
+      } else {
+        // Procesar cola persistente inmediatamente
+        const queueRes = await app.processPendingR2DeletionsQueue();
+        if (queueRes && queueRes.remaining > 0) {
+          app.showToast(`⚠️ Evento guardado, pero ${queueRes.remaining} foto(s) retiradas quedaron en cola de eliminación.`);
+        }
+      }
+    }
+
+    app.clearEventPreviewUrls();
+
+    const modal = document.getElementById('modal-admin-event');
+    if (modal) modal.classList.remove('active');
+
+    app.renderAdminEvents();
+    app.renderAdminDashboard();
+    app.showToast(`✅ Evento "${eventPayload.title}" guardado exitosamente.`);
+  } finally {
+    // Liberar siempre el bloqueo de reentrancia en el bloque finally
+    app.isSubmittingEvent = false;
+    if (btnSave) {
+      btnSave.disabled = false;
+      btnSave.innerHTML = originalBtnText;
+    }
+  }
+};
+
+app.confirmDeleteAdminEvent = function(eventId) {
+  const evt = (app.events || []).find(e => e.id === eventId);
+  if (!evt) return;
+
+  const photoCount = (evt.photos || []).length;
+  app.openConfirmModal({
+    title: 'Eliminar Evento',
+    message: `¿Estás seguro de eliminar el evento "${evt.title}" y sus ${photoCount} fotografías de la galería? El evento pasará a purga segura de archivos.`,
+    confirmText: 'Sí, Eliminar Evento',
+    onConfirm: () => app.executeDeleteAdminEvent(eventId)
+  });
+};
+
+app.executeDeleteAdminEvent = async function(eventId) {
+  const evt = (app.events || []).find(e => e.id === eventId);
+  if (!evt) return;
+
+  app.showToast('⏳ Iniciando proceso de eliminación segura...');
+
+  // 1. Marcar estado 'deleting' en Firestore esperando confirmación previa
+  if (db) {
+    try {
+      await db.collection(FIRESTORE_EVENTS_COLLECTION).doc(eventId).update({
+        status: 'deleting',
+        deletionStartedAt: Date.now()
+      });
+      console.log('[Firestore] Evento marcado como deleting:', eventId);
+    } catch (err) {
+      console.warn('[Firestore] Error al marcar evento como deleting en Firestore:', err);
+      app.showToast(`⚠️ No se pudo iniciar la eliminación: ${err.message || 'Fallo de permisos.'}`);
+      return;
+    }
+  }
+
+  // Actualizar estado en memoria local
+  evt.status = 'deleting';
+  app.renderAdminEvents();
+  app.renderAdminDashboard();
+
+  // Proceder a la purga controlada de fotos
+  await app.purgeEventPhotos(eventId);
+};
+
+app.retryPurgeEventPhotos = async function(eventId) {
+  const evt = (app.events || []).find(e => e.id === eventId);
+  if (!evt) return;
+
+  app.showToast('🔄 Reintentando purga de fotografías en R2...');
+  await app.purgeEventPhotos(eventId);
+};
+
+app.purgeEventPhotos = async function(eventId) {
+  if (!app.purgingEventIds) {
+    app.purgingEventIds = new Set();
+  }
+  if (app.purgingEventIds.has(eventId)) {
+    console.warn('[Events] Purga de este evento ya en curso, ignorando solicitud duplicada:', eventId);
+    app.showToast('⏳ Ya existe una purga en curso para este evento.');
+    return;
+  }
+  app.purgingEventIds.add(eventId);
+
+  try {
+    const evt = (app.events || []).find(e => e.id === eventId);
+    if (!evt) return;
+
+    let remainingPhotos = [...(evt.photos || [])];
+    let failedDeletions = 0;
+    let lastError = null;
+
+    // Si aún quedan fotos, purgar secuencialmente en R2 (en orden inverso)
+    if (remainingPhotos.length > 0) {
+      for (let i = remainingPhotos.length - 1; i >= 0; i--) {
+        const photo = remainingPhotos[i];
+        if (photo && photo.url) {
+          await app.withUrlPurgeLock(photo.url, async () => {
+            // Verificar si la URL continúa referenciada por cualquier OTRO evento existente en app.events
+            // (independientemente de que esté active, draft, archived o deleting) (H-2.5-01)
+            const isReferencedByOther = (app.events || []).some(otherEvt => {
+              if (!otherEvt || otherEvt.id === eventId) return false;
+              if (!Array.isArray(otherEvt.photos)) return false;
+              return otherEvt.photos.some(p => p && p.url === photo.url);
+            });
+
+            if (isReferencedByOther) {
+              // Si otro evento aún la referencia:
+              // - NO ejecutar DELETE sobre R2.
+              // - Retirar la fotografía únicamente de la lista remainingPhotos del evento que se está purgando.
+              console.log('[Events Purge] Fotografía compartida referenciada por otro evento. Se omite DELETE en R2:', photo.url);
+              remainingPhotos.splice(i, 1);
+              evt.photos = remainingPhotos;
+
+              // Persistir el avance en Firestore siguiendo el flujo progresivo existente
+              if (db) {
+                try {
+                  await db.collection(FIRESTORE_EVENTS_COLLECTION).doc(eventId).update({
+                    photos: remainingPhotos,
+                    updatedAt: Date.now()
+                  });
+                } catch (fsErr) {
+                  console.warn('[Firestore] Error al actualizar fotos pendientes tras omitir compartida:', fsErr);
+                }
+              }
+              return;
+            }
+
+            // Si ningún otro evento la referencia, proceder a la eliminación física en R2
+            try {
+              const delRes = await app.eventPhotoEngine.deleteFromR2(photo.url);
+              if (delRes && delRes.success) {
+                remainingPhotos.splice(i, 1);
+                evt.photos = remainingPhotos;
+
+                // Actualizar documento de Firestore progresivamente tras cada eliminación confirmada
+                if (db) {
+                  try {
+                    await db.collection(FIRESTORE_EVENTS_COLLECTION).doc(eventId).update({
+                      photos: remainingPhotos,
+                      updatedAt: Date.now()
+                    });
+                  } catch (fsErr) {
+                    console.warn('[Firestore] Error al actualizar fotos pendientes tras DELETE:', fsErr);
+                  }
+                }
+              } else {
+                failedDeletions++;
+                lastError = (delRes && delRes.error) || 'Fallo al eliminar en R2';
+              }
+            } catch (err) {
+              failedDeletions++;
+              lastError = err.message || 'Error de conexión';
+            }
+          });
+        } else {
+          remainingPhotos.splice(i, 1);
+        }
+      }
+      // Actualizar lista en memoria local
+      evt.photos = remainingPhotos;
+    }
+
+    if (remainingPhotos.length === 0) {
+      // Todas las fotos han sido purgadas (o el evento ya no tenía fotos pendientes).
+      // Proceder al intento de eliminación definitiva del documento en Firestore.
+      let docDeletedInFirestore = false;
+      let docDeleteError = null;
+
+      if (db) {
+        try {
+          await db.collection(FIRESTORE_EVENTS_COLLECTION).doc(eventId).delete();
+          docDeletedInFirestore = true;
+          console.log('[Firestore] Documento eliminado definitivamente tras purga completa:', eventId);
+        } catch (err) {
+          docDeleteError = err.message || 'Error en base de datos al eliminar documento.';
+          console.warn('[Firestore] Error al eliminar documento final tras purga:', err);
+        }
+      } else {
+        docDeletedInFirestore = true;
+      }
+
+      if (docDeletedInFirestore) {
+        // Confirmación real en base de datos: retirar de la memoria local y notificar éxito permanente
+        app.events = (app.events || []).filter(e => e.id !== eventId);
+        app.renderAdminEvents();
+        app.renderAdminDashboard();
+        app.showToast(`✅ Evento "${evt.title}" y todas sus fotografías eliminados permanentemente.`);
+      } else {
+        // Fallo en la eliminación del documento: NO retirar de app.events ni mostrar falso éxito
+        evt.status = 'deleting';
+        evt.photos = [];
+        evt.deletionError = `Fotografías purgadas de R2 con éxito, pero falló la eliminación final del documento en Firestore: ${docDeleteError}`;
+
+        if (db) {
+          try {
+            await db.collection(FIRESTORE_EVENTS_COLLECTION).doc(eventId).update({
+              status: 'deleting',
+              photos: [],
+              deletionError: evt.deletionError,
+              updatedAt: Date.now()
+            });
+          } catch (_) {}
+        }
+
+        app.renderAdminEvents();
+        app.renderAdminDashboard();
+        app.showToast('⚠️ Fotografías eliminadas de R2 con éxito, pero falló la eliminación del documento en Firestore. Puedes reintentar.');
+      }
+    } else {
+      // Quedaron fotos pendientes de eliminación en R2
+      if (db) {
+        try {
+          await db.collection(FIRESTORE_EVENTS_COLLECTION).doc(eventId).update({
+            status: 'deleting',
+            photos: remainingPhotos,
+            deletionError: `Quedaron ${remainingPhotos.length} fotografía(s) pendientes de eliminación. Último error: ${lastError}`,
+            updatedAt: Date.now()
+          });
+        } catch (fsErr) {
+          console.warn('[Firestore] Error al persistir estado deleting con fotos pendientes:', fsErr);
+        }
+      }
+      app.renderAdminEvents();
+      app.renderAdminDashboard();
+      app.showToast(`⚠️ Quedaron ${remainingPhotos.length} foto(s) pendientes de eliminación en R2. Puedes reintentar la purga.`);
+    }
+  } finally {
+    // Liberación garantizada del bloqueo de purga por evento
+    app.purgingEventIds.delete(eventId);
+  }
+};
+
+// ==========================================================================
+// 14.4.1. MÓDULO EVENTOS — FASE 3.0: SECCIÓN E INTERFAZ PÚBLICA DE EVENTOS
+// ==========================================================================
+
+// Mapeo seguro de categorías de eventos
+app.getEventCategoryLabel = function(catKey) {
+  const map = {
+    'birthday': '🎂 Cumpleaños',
+    'fifteen_years': '👑 15 años',
+    'wedding': '💍 Bodas',
+    'corporate': '💼 Corporativo',
+    'celebration': '🎉 Celebraciones'
+  };
+  return map[catKey] || (catKey ? String(catKey) : '🎉 Evento');
+};
+
+// Formato de fecha legible y elegante
+app.formatEventDate = function(timestamp) {
+  if (!timestamp) return '';
+  try {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('es-ES', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  } catch(e) {
+    return '';
+  }
+};
+
+// Renderizado de flyers destacados bajo la sección de eventos (máximo 5 activos)
+app.renderRecentFlyersForEvents = function() {
+  const container = document.getElementById('events-recent-flyers-grid');
+  const section = document.getElementById('events-recent-flyers-section');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const now = Date.now();
+  // Filtrar flyers activos y no expirados de la lista de promociones existente
+  const activePromos = (app.promotions || []).filter(promo => {
+    if (promo.status !== 'active') return false;
+    const expMs = app.getPromoExpirationMs ? app.getPromoExpirationMs(promo) : null;
+    if (expMs && expMs < now) return false;
+    return true;
+  });
+
+  // Ordenar del más nuevo al más antiguo
+  activePromos.sort((a, b) => (b.createdAt || b.timestamp || 0) - (a.createdAt || a.timestamp || 0));
+
+  // Máximo 5 flyers activos
+  const topFlyers = activePromos.slice(0, 5);
+
+  if (section) {
+    section.style.display = (topFlyers.length > 0) ? 'block' : 'none';
+  }
+
+  topFlyers.forEach(promo => {
+    const card = app.createPromoCardElement(promo, now);
+    container.appendChild(card);
+  });
+};
+
+// Renderizado público de la lista de eventos
+app.renderPublicEvents = function() {
+  const grid = document.getElementById('public-events-grid');
+  const loading = document.getElementById('events-loading');
+  const errorBox = document.getElementById('events-error');
+  const emptyState = document.getElementById('events-empty-state');
+  const countBadge = document.getElementById('active-events-count');
+
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  // 1. Estado de carga inicial
+  if (!app.eventsLoaded) {
+    if (loading) loading.style.display = 'flex';
+    if (errorBox) errorBox.style.display = 'none';
+    if (emptyState) emptyState.style.display = 'none';
+    return;
+  }
+  if (loading) loading.style.display = 'none';
+
+  // 2. Estado de error de lectura
+  if (app.eventsLoadError) {
+    if (errorBox) errorBox.style.display = 'block';
+    if (emptyState) emptyState.style.display = 'none';
+    return;
+  }
+  if (errorBox) errorBox.style.display = 'none';
+
+  // 3. Filtrar exclusivamente status === 'active' (excluye draft, archived, deleting y otros)
+  const activeEvents = (app.events || []).filter(e => e && e.status === 'active');
+
+  // Ordenar del más reciente al más antiguo
+  activeEvents.sort((a, b) => (b.createdAt || b.date || 0) - (a.createdAt || a.date || 0));
+
+  if (countBadge) {
+    countBadge.textContent = activeEvents.length;
+  }
+
+  // 4. Estado de listado vacío
+  if (activeEvents.length === 0) {
+    if (emptyState) emptyState.style.display = 'block';
+    app.renderRecentFlyersForEvents();
+    return;
+  }
+  if (emptyState) emptyState.style.display = 'none';
+
+  // 5. Renderizado de tarjetas públicas
+  activeEvents.forEach(evt => {
+    const card = document.createElement('div');
+    card.className = 'event-card';
+    card.onclick = () => app.openEventDetail(evt.id);
+
+    // Selección de primera fotografía válida respetando el orden
+    const validPhotos = (evt.photos || []).filter(p => p && p.url && typeof p.url === 'string' && p.url.trim().length > 0);
+    const primaryPhoto = validPhotos[0];
+    const catLabel = app.getEventCategoryLabel(evt.category);
+    const dateStr = app.formatEventDate(evt.createdAt);
+
+    const mediaHtml = primaryPhoto
+      ? `<img class="event-card-img" src="${primaryPhoto.url}" alt="${evt.title || 'Evento'}" loading="lazy">`
+      : `<div class="event-card-placeholder">
+           <span class="event-card-placeholder-icon">📸</span>
+           <span style="font-size: 12px; font-weight: 600;">Cobertura fotográfica</span>
+         </div>`;
+
+    const photosBadge = validPhotos.length > 0
+      ? `<span class="event-badge-photos">📸 ${validPhotos.length} foto${validPhotos.length === 1 ? '' : 's'}</span>`
+      : '';
+
+    const reviewSnippet = evt.review
+      ? `<p class="event-card-review-snippet">${evt.review.length > 120 ? evt.review.slice(0, 117) + '...' : evt.review}</p>`
+      : '';
+
+    // SEGURIDAD: Nunca exponer authorUid, authorEmail, lastEditorUid, lastEditorEmail en atributos o DOM
+    card.innerHTML = `
+      <div class="event-card-image-wrap">
+        ${mediaHtml}
+        <span class="event-badge-cat">${catLabel}</span>
+        ${photosBadge}
+      </div>
+      <div class="event-card-body">
+        <h3 class="event-card-title">${evt.title || 'Evento Especial'}</h3>
+        ${reviewSnippet}
+        <div class="event-card-footer">
+          <span class="event-card-date">${dateStr}</span>
+          <span class="event-card-cta-btn">Ver cobertura →</span>
+        </div>
+      </div>
+    `;
+
+    grid.appendChild(card);
+  });
+
+  // Refrescar flyers recientes bajo eventos
+  app.renderRecentFlyersForEvents();
+};
+
+// Apertura del detalle individual del evento
+app.openEventDetail = function(eventId) {
+  const errorEl = document.getElementById('event-detail-error');
+  const contentEl = document.getElementById('event-detail-content');
+  const titleEl = document.getElementById('event-detail-title');
+  const catBadge = document.getElementById('event-detail-category-badge');
+  const dateEl = document.getElementById('event-detail-date');
+  const reviewEl = document.getElementById('event-detail-review-text');
+  const photoCountEl = document.getElementById('event-detail-photo-count');
+  const galleryGrid = document.getElementById('event-detail-gallery-grid');
+  const emptyGalleryEl = document.getElementById('event-detail-empty-gallery');
+
+  const event = (app.events || []).find(e => e.id === eventId);
+
+  // Estados de validación: evento no encontrado o que dejó de estar activo
+  if (!event || event.status !== 'active') {
+    app.currentEvent = null;
+    if (contentEl) contentEl.style.display = 'none';
+    if (errorEl) {
+      errorEl.style.display = 'block';
+      const errorTitle = document.getElementById('event-detail-error-title');
+      const errorDesc = document.getElementById('event-detail-error-desc');
+      if (!event) {
+        if (errorTitle) errorTitle.textContent = 'Evento no encontrado';
+        if (errorDesc) errorDesc.textContent = 'El evento solicitado no existe o fue retirado.';
+      } else {
+        if (errorTitle) errorTitle.textContent = 'Evento no disponible';
+        if (errorDesc) errorDesc.textContent = 'Esta cobertura ya no se encuentra activa al público.';
+      }
+    }
+    app.showScreen('event-detail');
+    return;
+  }
+
+  // Evento activo disponible
+  app.currentEvent = event;
+  if (errorEl) errorEl.style.display = 'none';
+  if (contentEl) contentEl.style.display = 'flex';
+
+  if (titleEl) titleEl.textContent = event.title || 'Cobertura de Evento';
+  if (catBadge) catBadge.textContent = app.getEventCategoryLabel(event.category);
+  if (dateEl) dateEl.textContent = app.formatEventDate(event.createdAt);
+  if (reviewEl) {
+    reviewEl.textContent = event.review || 'Sin reseña disponible para esta cobertura.';
+  }
+
+  // Galería fotográfica (hasta 30 fotos, respetando orden)
+  const validPhotos = (event.photos || []).filter(p => p && p.url && typeof p.url === 'string' && p.url.trim().length > 0);
+  if (photoCountEl) photoCountEl.textContent = validPhotos.length;
+
+  if (galleryGrid) {
+    galleryGrid.innerHTML = '';
+    if (validPhotos.length === 0) {
+      if (emptyGalleryEl) emptyGalleryEl.style.display = 'block';
+    } else {
+      if (emptyGalleryEl) emptyGalleryEl.style.display = 'none';
+      validPhotos.forEach((photo, idx) => {
+        const item = document.createElement('div');
+        item.className = 'event-gallery-item';
+        item.title = `Ampliar foto ${idx + 1}`;
+        item.onclick = () => app.openEventPhotoLightbox(idx);
+        item.innerHTML = `
+          <img src="${photo.url}" alt="${photo.name || 'Foto ' + (idx + 1)}" loading="lazy">
+          <div class="event-gallery-zoom-overlay">🔍</div>
+        `;
+        galleryGrid.appendChild(item);
+      });
+    }
+  }
+
+  // Sincronizar enlace hash sin provocar saltos bruscos
+  try {
+    history.replaceState(null, '', `#event=${event.id}`);
+  } catch(e) {
+    window.location.hash = `event=${event.id}`;
+  }
+
+  app.showScreen('event-detail');
+};
+
+// Cierre del detalle individual
+app.closeEventDetail = function() {
+  app.currentEvent = null;
+  try {
+    history.replaceState(null, '', window.location.pathname);
+  } catch(e) {
+    window.location.hash = '';
+  }
+  app.showScreen('events');
+};
+
+// Compartir evento con Web Share API y alternativa clipboard
+app.shareEvent = async function(event) {
+  if (!event) return;
+  const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://guia7d.web.app';
+  const pathname = window.location.pathname || '/';
+  const url = `${origin}${pathname}#event=${event.id}`;
+  const catLabel = app.getEventCategoryLabel(event.category);
+  const title = `${event.title || 'Evento'} | 7D App`;
+  let text = `📸 ¡Cobertura exclusiva en 7D App!\n\n✨ ${event.title}\n🏷️ ${catLabel}`;
+  if (event.review) {
+    const cleanReview = event.review.length > 140 ? event.review.slice(0, 137) + '...' : event.review;
+    text += `\n\n💬 ${cleanReview}`;
+  }
+  text += `\n\n👉 Mira la galería fotográfica completa aquí:\n${url}`;
+
+  // 1. Web Share API si está disponible en el dispositivo
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title,
+        text,
+        url
+      });
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // Cancelado voluntariamente
+      console.warn('[7D App] Falló Web Share, usando fallback:', err);
+    }
+  }
+
+  // 2. Alternativa segura mediante copia del enlace al portapapeles
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(url);
+      app.showToast('📋 ¡Enlace del evento copiado al portapapeles!');
+      return;
+    } catch (err) {
+      console.warn('[7D App] Falló portapapeles:', err);
+    }
+  }
+
+  // Fallback estándar
+  try {
+    window.prompt('Copia este enlace para compartir el evento:', url);
+  } catch(e) {}
+};
+
+app.shareCurrentEvent = function() {
+  if (app.currentEvent) {
+    app.shareEvent(app.currentEvent);
+  } else {
+    app.shareApp();
+  }
+};
+
+// Lightbox / Visor de fotos ampliado
+app.openEventPhotoLightbox = function(index = 0) {
+  if (!app.currentEvent) return;
+  const validPhotos = (app.currentEvent.photos || []).filter(p => p && p.url && typeof p.url === 'string' && p.url.trim().length > 0);
+  if (validPhotos.length === 0) return;
+
+  app.currentLightboxPhotos = validPhotos;
+  app.currentLightboxPhotoIndex = Math.max(0, Math.min(index, validPhotos.length - 1));
+
+  const modal = document.getElementById('modal-event-lightbox');
+  const imgEl = document.getElementById('lightbox-img');
+  const counterEl = document.getElementById('lightbox-counter');
+
+  if (imgEl) {
+    imgEl.src = app.currentLightboxPhotos[app.currentLightboxPhotoIndex].url;
+  }
+  if (counterEl) {
+    counterEl.textContent = `Foto ${app.currentLightboxPhotoIndex + 1} de ${app.currentLightboxPhotos.length}`;
+  }
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.classList.add('active');
+  }
+  document.body.classList.add('modal-open');
+};
+
+app.closeEventPhotoLightbox = function() {
+  const modal = document.getElementById('modal-event-lightbox');
+  if (modal) {
+    modal.style.display = 'none';
+    modal.classList.remove('active');
+  }
+  document.body.classList.remove('modal-open');
+};
+
+app.nextEventPhoto = function() {
+  if (!app.currentLightboxPhotos || app.currentLightboxPhotos.length === 0) return;
+  app.currentLightboxPhotoIndex = (app.currentLightboxPhotoIndex + 1) % app.currentLightboxPhotos.length;
+
+  const imgEl = document.getElementById('lightbox-img');
+  const counterEl = document.getElementById('lightbox-counter');
+  if (imgEl) {
+    imgEl.src = app.currentLightboxPhotos[app.currentLightboxPhotoIndex].url;
+  }
+  if (counterEl) {
+    counterEl.textContent = `Foto ${app.currentLightboxPhotoIndex + 1} de ${app.currentLightboxPhotos.length}`;
+  }
+};
+
+app.prevEventPhoto = function() {
+  if (!app.currentLightboxPhotos || app.currentLightboxPhotos.length === 0) return;
+  app.currentLightboxPhotoIndex = (app.currentLightboxPhotoIndex - 1 + app.currentLightboxPhotos.length) % app.currentLightboxPhotos.length;
+
+  const imgEl = document.getElementById('lightbox-img');
+  const counterEl = document.getElementById('lightbox-counter');
+  if (imgEl) {
+    imgEl.src = app.currentLightboxPhotos[app.currentLightboxPhotoIndex].url;
+  }
+  if (counterEl) {
+    counterEl.textContent = `Foto ${app.currentLightboxPhotoIndex + 1} de ${app.currentLightboxPhotos.length}`;
+  }
+};
 
 
 // 14.5. INSTALACIÓN DE LA PWA
@@ -6155,6 +8262,8 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log('[7D App] Motor web inicializado.');
 
   // Renderizar componentes principales de inmediato
+  app.renderPublicEvents();
+  app.renderRecentFlyersForEvents();
   app.renderCategories();
   app.renderPromotions();
   app.renderCitiesModal();
@@ -6164,11 +8273,26 @@ document.addEventListener('DOMContentLoaded', () => {
   // Iniciar escucha en tiempo real de Firestore
   app.initFirestoreSync();
 
-  // Soporte para navegación directa por enlace (#promo=ID, #biz=ID)
+  // Soporte para navegación directa por enlace (#promo=ID, #biz=ID, #event=ID)
   app.handleDeepLink();
 
-  // Soporte para tecla Escape en modales y paneles
+  // Soporte para tecla Escape y navegación por teclado en modales y paneles
   window.addEventListener('keydown', (e) => {
+    // Lightbox modal de eventos
+    const lightboxModal = document.getElementById('modal-event-lightbox');
+    if (lightboxModal && (lightboxModal.style.display === 'flex' || lightboxModal.classList.contains('active'))) {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        app.closeEventPhotoLightbox();
+        return;
+      } else if (e.key === 'ArrowRight') {
+        app.nextEventPhoto();
+        return;
+      } else if (e.key === 'ArrowLeft') {
+        app.prevEventPhoto();
+        return;
+      }
+    }
+
     if (e.key === 'Escape' || e.key === 'Esc') {
       const catSheet = document.getElementById('modal-all-categories');
       if (catSheet && catSheet.classList.contains('active')) {
