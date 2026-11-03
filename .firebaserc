@@ -1,0 +1,17 @@
+{
+  "projects": {
+    "default": "dapp-f5e40"
+  },
+  "targets": {
+    "dapp-f5e40": {
+      "hosting": {
+        "guia7d": [
+          "guia7d"
+        ],
+        "dfarra": [
+          "dfarra"
+        ]
+      }
+    }
+  }
+}
