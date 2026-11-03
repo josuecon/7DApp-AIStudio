@@ -7417,7 +7417,9 @@ app.retryFailedEventPhotos = async function() {
 };
 
 app.handleAdminEventSubmit = async function(event) {
-  event.preventDefault();
+  if (event && typeof event.preventDefault === 'function') {
+    event.preventDefault();
+  }
 
   // Bloqueo de reentrancia: evitar dobles envíos y ejecuciones concurrentes
   if (app.isSubmittingEvent) {
@@ -7528,29 +7530,31 @@ app.handleAdminEventSubmit = async function(event) {
     let savedInFirestore = false;
     let firestoreErrorReason = null;
 
-    if (db) {
+    if (!db) {
+      firestoreErrorReason = 'La base de datos de Firebase no está inicializada o no se encuentra disponible. No se pudo guardar el evento.';
+      console.error('[Firestore] Guardado cancelado: Firebase db no está inicializado.');
+    } else {
       try {
-        await db.collection(FIRESTORE_EVENTS_COLLECTION).doc(eventId).set(eventPayload, { merge: true });
+        await db.collection(FIRESTORE_EVENTS_COLLECTION).doc(eventId).set(eventPayload);
         savedInFirestore = true;
         console.log('[Firestore] Evento persistido exitosamente en events:', eventId);
       } catch (dbErr) {
-        console.warn('[Firestore] Error al persistir evento en Firestore:', dbErr);
-        firestoreErrorReason = dbErr.message || 'Fallo de permisos en base de datos.';
-        const isPerm = dbErr.code === 'permission-denied' || (dbErr.message && dbErr.message.includes('permission'));
-        if (isPerm) {
-          firestoreErrorReason = 'La colección "events" aún no cuenta con reglas de escritura configuradas en Firebase para administradores. La persistencia fue detenida de forma segura.';
+        console.error('[Firestore] Error al guardar en events:', dbErr);
+        if (dbErr.code === 'permission-denied' || (dbErr.message && (dbErr.message.includes('permission') || dbErr.message.includes('Missing or insufficient permissions')))) {
+          firestoreErrorReason = 'Permiso denegado por las reglas de seguridad de Firestore para la colección "events".';
+        } else {
+          firestoreErrorReason = 'Error al registrar el evento en el servidor: ' + (dbErr.message || 'Error de conexión con la base de datos');
         }
       }
-    } else {
-      firestoreErrorReason = 'Instancia de Cloud Firestore no inicializada.';
     }
 
-    // Verificación estricta de persistencia: no simular que el guardado funcionó si fue rechazado
+    // Verificación de persistencia: informar al usuario si hubo error en Firestore y detener
     if (!savedInFirestore) {
       if (errBox) {
-        errBox.textContent = `⚠️ Error de persistencia: ${firestoreErrorReason}`;
+        errBox.textContent = firestoreErrorReason;
         errBox.style.display = 'block';
       }
+      app.showToast('❌ ' + firestoreErrorReason);
       return;
     }
 
@@ -7629,8 +7633,8 @@ app.executeDeleteAdminEvent = async function(eventId) {
       });
       console.log('[Firestore] Evento marcado como deleting:', eventId);
     } catch (err) {
-      console.warn('[Firestore] Error al marcar evento como deleting en Firestore:', err);
-      app.showToast(`⚠️ No se pudo iniciar la eliminación: ${err.message || 'Fallo de permisos.'}`);
+      console.error('[Firestore] Error al marcar evento como deleting en Firestore:', err);
+      app.showToast('Error al actualizar en Firestore: ' + (err.message || 'Error desconocido'));
       return;
     }
   }
@@ -7754,8 +7758,8 @@ app.purgeEventPhotos = async function(eventId) {
           docDeletedInFirestore = true;
           console.log('[Firestore] Documento eliminado definitivamente tras purga completa:', eventId);
         } catch (err) {
-          docDeleteError = err.message || 'Error en base de datos al eliminar documento.';
-          console.warn('[Firestore] Error al eliminar documento final tras purga:', err);
+          docDeleteError = err.message || 'Error desconocido';
+          console.error('[Firestore] Error al eliminar documento final tras purga:', err);
         }
       } else {
         docDeletedInFirestore = true;
