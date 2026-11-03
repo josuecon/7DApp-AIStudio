@@ -2258,7 +2258,7 @@ async function uploadFlyerToR2(file) {
 const EVENT_PHOTO_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB límite original
 const EVENT_PHOTO_MAX_DIMENSION = 1920;             // Límite máx en lado más largo (Full HD)
 const EVENT_PHOTO_WEBP_QUALITY = 0.80;              // Calidad balanceada
-const EVENT_PHOTO_MAX_COUNT = 30;                   // Máximo de fotos por evento
+const EVENT_PHOTO_MAX_COUNT = 50;                   // Máximo de fotos por evento
 const EVENT_PHOTO_MAX_CONCURRENCY = 3;              // Cargas simultáneas
 const EVENT_PHOTO_ALLOWED_TYPES = [
   'image/jpeg',
@@ -7135,7 +7135,7 @@ app.openAdminEventModal = function(eventId = null) {
   // Instanciar cola con concurrencia de 1 para protección estricta de memoria en móviles
   app.activeEventQueue = app.eventPhotoEngine.createQueue({
     concurrency: 1,
-    maxPhotos: 30
+    maxPhotos: 50
   });
 
   // Configurar seguimiento reactivo de progreso
