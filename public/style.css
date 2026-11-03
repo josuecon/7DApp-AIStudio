@@ -661,8 +661,8 @@ body {
 }
 
 .hero-content {
-  background: linear-gradient(135deg, #1C3029 0%, #12211C 100%);
-  border: 1px solid rgba(85, 201, 154, 0.25);
+ background: linear-gradient(135deg, #191919 0%, #0A0A0A 100%);
+border: 1px solid rgba(181, 43, 50, 0.25);
   border-radius: var(--radius-lg);
   padding: clamp(18px, 4vw, 28px);
   position: relative;
@@ -683,7 +683,7 @@ body {
 
 .hero-badge {
   display: inline-block;
-  background: #16A34A;
+ background: #B52B32;
   color: #FFFFFF;
   font-size: clamp(11px, 2.5vw, 13px);
   font-weight: 800;
@@ -720,8 +720,8 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: rgba(85, 201, 154, 0.16);
-  border: 1px solid rgba(85, 201, 154, 0.35);
+ background: rgba(181, 43, 50, 0.16);
+ border: 1px solid rgba(181, 43, 50, 0.35);
   color: #FFFFFF;
   padding: 8px 18px;
   border-radius: 9999px;
@@ -729,14 +729,14 @@ body {
   font-weight: 800;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 10px rgba(85, 201, 154, 0.2);
+  border: 1px solid rgba(181, 43, 50, 0.35);
 }
 
 .hero-share-btn:hover {
   background: var(--primary);
   border-color: rgba(255, 255, 255, 0.3);
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(85, 201, 154, 0.45);
+ box-shadow: 0 4px 16px rgba(181, 43, 50, 0.35);
 }
 
 .hero-share-btn:active {
