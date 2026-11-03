@@ -237,10 +237,10 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(16, 27, 24, 0.95);
+  background: rgba(10, 10, 10, 0.95);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(85, 201, 154, 0.16);
+  border-bottom: 1px solid rgba(181, 43, 50, 0.25);
   width: 100%;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
 }
@@ -296,14 +296,14 @@ body {
   font-weight: 900;
   font-size: clamp(15px, 3.4vw, 19px);
   letter-spacing: -0.3px;
-  color: #EAF4EF;
+ color: #FFFFFF;
   line-height: 1.15;
   white-space: nowrap;
 }
 
 .brand-tagline {
   font-size: clamp(10.5px, 2.3vw, 12px);
-  color: #9CB7AC;
+  color: #A6A6A6;
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: 0.1px;
