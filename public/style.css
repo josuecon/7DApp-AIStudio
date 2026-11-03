@@ -77,7 +77,7 @@ body {
   height: 100vh;
   z-index: -1;
   pointer-events: none;
-  background-color: #101B18;
+ background-color: #0A0A0A;
   overflow: hidden;
   -webkit-transform: translate3d(0, 0, 0);
   transform: translate3d(0, 0, 0);
