@@ -1,5 +1,5 @@
-// 7D App - Progressive Web App Service Worker
-const CACHE_NAME = '7dapp-v1.3.0';
+// Dfarra- Progressive Web App Service Worker
+const CACHE_NAME = '7dapp-v1.3.1';
 
 const STATIC_ASSETS = [
   './',
