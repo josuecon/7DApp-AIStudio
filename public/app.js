@@ -2934,7 +2934,7 @@ app.submitPromotionForm = app.submitPromotion;
 // 8. SEGURIDAD Y ACCESO ADMINISTRATIVO — GOOGLE AUTH
 // ==========================================================================
 
-const ADMIN_EMAILS = ['josueco@gmail.com', 'josueco2023@gmail.com'];
+const ADMIN_EMAILS = ['josueco@gmail.com', 'josueco2023@gmail.com', 'milabuenobrito@gmail.com'];
 const isAdminEmail = (email) => !!email && ADMIN_EMAILS.includes(email.toLowerCase().trim());
 
 app.adminAuth = null;
