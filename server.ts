@@ -885,8 +885,7 @@ export interface AuthenticatedRequest extends express.Request {
   user?: AuthenticatedUser;
 }
 
-const DEFAULT_ADMIN_EMAILS = ['josueco2023@gmail.com', 'josueco@gmail.com'];
-
+const DEFAULT_ADMIN_EMAILS = ['josueco2023@gmail.com', 'josueco@gmail.com', 'milabuenobrito@gmail.com'];
 /**
  * Obtiene la lista blanca de correos autorizados como administradores desde variables de entorno.
  */
