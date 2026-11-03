@@ -3,14 +3,14 @@
    ========================================================================== */
 
 :root {
-  --bg-main: #101B18;
-  --bg-surface: #1C3029;
-  --bg-surface-elevated: #243D34;
-  --bg-surface-hover: #2D4D42;
+ --bg-main: #0A0A0A;
+  --bg-surface: #191919;
+  --bg-surface-elevated: #242424;
+  --bg-surface-hover: #303030;
   
-  --primary: #55C99A;
-  --primary-hover: #44B587;
-  --primary-glow: rgba(85, 201, 154, 0.28);
+  --primary: #B52B32;
+  --primary-hover: #982329;
+  --primary-glow: rgba(181, 43, 50, 0.22);
   
   --accent-cream: #F5E9C9;
   --accent-amber: #F5E9C9;
@@ -18,12 +18,12 @@
   --whatsapp-hover: #20BA5A;
   --whatsapp-glow: rgba(37, 211, 102, 0.2);
   
-  --text-primary: #EAF4EF;
-  --text-secondary: #9CB7AC;
-  --text-muted: #68857A;
+  --text-primary: #FFFFFF;
+  --text-secondary: #A6A6A6;
+  --text-muted: #777777;
   
-  --border-subtle: rgba(85, 201, 154, 0.12);
-  --border-focus: rgba(85, 201, 154, 0.55);
+  --border-subtle: rgba(255, 255, 255, 0.10);
+  --border-focus: rgba(181, 43, 50, 0.65);
   --border-cream: rgba(245, 233, 201, 0.25);
   
   --radius-sm: 8px;
