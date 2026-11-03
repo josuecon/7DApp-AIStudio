@@ -2485,7 +2485,7 @@ class EventPhotoUploadQueue {
   }
 
   /**
-   * Agrega nuevas fotografías a la cola respetando el límite máximo de 30.
+   * Agrega nuevas fotografías a la cola respetando el límite máximo de 50.
    */
   addFiles(files = []) {
     const currentCount = this.items.length;
@@ -7276,7 +7276,7 @@ app.handleEventPhotoSelect = function(event) {
       });
 
       if (addRes.ignoredCount > 0) {
-        app.showToast(`⚠️ Se admitieron fotos hasta el límite máximo de 30. Se ignoraron ${addRes.ignoredCount} archivo(s) excedentes.`);
+        app.showToast(`⚠️ Se admitieron fotos hasta el límite máximo de 50. Se ignoraron ${addRes.ignoredCount} archivo(s) excedentes.`);
       }
     } catch (err) {
       app.showToast(`⚠️ ${err.message}`);
