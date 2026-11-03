@@ -856,7 +856,9 @@ body {
   width: 100%;
 }
 
-.cat-pill-all {
+.cat-pill-all,
+.cat-pill-item,
+.event-cat-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -874,16 +876,23 @@ body {
   user-select: none;
   min-height: 40px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: inherit;
 }
 
-.cat-pill-all:hover {
+.cat-pill-all:hover,
+.cat-pill-item:hover,
+.event-cat-chip:hover {
   background: rgba(36, 61, 52, 0.85);
   border-color: rgba(85, 201, 154, 0.4);
   color: var(--text-primary, #FFFFFF);
   transform: translateY(-1px);
 }
 
-.cat-pill-all.active {
+.cat-pill-all.active,
+.cat-pill-item.active,
+.event-cat-chip.active {
   background: #55C99A;
   color: #101B18;
   border-color: #55C99A;
@@ -891,8 +900,18 @@ body {
   box-shadow: 0 4px 14px rgba(85, 201, 154, 0.4);
 }
 
-.cat-pill-all.active .cat-pill-icon {
+.cat-pill-all.active .cat-pill-icon,
+.cat-pill-item.active .cat-pill-icon,
+.event-cat-chip.active .cat-pill-icon,
+.event-cat-chip.active .event-cat-icon {
   color: #101B18;
+}
+
+.cat-pill-all.active .cat-pill-label,
+.cat-pill-item.active .cat-pill-label,
+.event-cat-chip.active .cat-pill-label {
+  color: #101B18;
+  font-weight: 800;
 }
 
 .cat-pill-icon {
@@ -5798,6 +5817,28 @@ body {
   max-width: 900px;
   margin: 0 auto;
   padding: clamp(12px, 3.5vw, 24px);
+}
+
+/* Barra de filtros de categoría de eventos (Scroll horizontal nativo) */
+.events-categories-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 14px 2px;
+  margin-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(85, 201, 154, 0.25) transparent;
+}
+
+.events-categories-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.events-categories-bar::-webkit-scrollbar-thumb {
+  background: rgba(85, 201, 154, 0.25);
+  border-radius: 4px;
 }
 
 .events-subbar {

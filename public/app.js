@@ -55,11 +55,11 @@ const FIRESTORE_COLLECTION = FIRESTORE_LEGACY_COLLECTION;
 
 // Categorías oficiales obligatorias del Módulo Eventos (Fase 2)
 const EVENT_CATEGORIES = [
-  { id: 'birthday', label: 'Cumpleaños', icon: '🎂' },
-  { id: 'fifteen_years', label: '15 años', icon: '👑' },
-  { id: 'wedding', label: 'Bodas', icon: '💍' },
-  { id: 'corporate', label: 'Corporativo', icon: '💼' },
-  { id: 'celebration', label: 'Celebraciones', icon: '🎉' }
+  { id: 'birthday', label: 'Cumpleaños', icon: '🎂', lucideIcon: 'cake' },
+  { id: 'fifteen_years', label: '15 años', icon: '👑', lucideIcon: 'crown' },
+  { id: 'wedding', label: 'Bodas', icon: '💍', lucideIcon: 'gem' },
+  { id: 'corporate', label: 'Corporativo', icon: '💼', lucideIcon: 'briefcase' },
+  { id: 'celebration', label: 'Celebraciones', icon: '🎉', lucideIcon: 'party-popper' }
 ];
 
 const MAX_IMAGE_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 750 KB límite preventivo para proteger Firestore antes de R2
@@ -163,7 +163,8 @@ promotionsLoaded: false,
   eventsLoadError: null,
   currentEvent: null,
   currentLightboxPhotoIndex: 0,
-  currentLightboxPhotos: []
+  currentLightboxPhotos: [],
+  currentEventCategory: 'all'
 };
 
 // Exponer app en window para eventos HTML
@@ -265,8 +266,11 @@ app.getCategoryLucideIcon = function(cat) {
   if (name.includes('educac') || name.includes('libro') || name.includes('libreria') || name.includes('curso') || name.includes('escuela') || name.includes('papeler')) return 'book-open';
   if (name.includes('licor') || name.includes('bebida') || name.includes('cerveza') || name.includes('bar') || name.includes('vinos')) return 'wine';
   if (name.includes('viaje') || name.includes('turism') || name.includes('hotel') || name.includes('posada') || name.includes('vuelo')) return 'hotel';
-  if (name.includes('joya') || name.includes('reloj') || name.includes('accesorio') || name.includes('optica') || name.includes('lente')) return 'gem';
-  if (name.includes('evento') || name.includes('fiesta') || name.includes('entretenim') || name.includes('cine') || name.includes('musica')) return 'party-popper';
+  if (name.includes('joya') || name.includes('reloj') || name.includes('accesorio') || name.includes('optica') || name.includes('lente') || name.includes('boda') || name.includes('wedding')) return 'gem';
+  if (name.includes('cumple') || name.includes('birthday')) return 'cake';
+  if (name.includes('15') || name.includes('quince') || name.includes('fifteen')) return 'crown';
+  if (name.includes('corporativ') || name.includes('corporate')) return 'briefcase';
+  if (name.includes('evento') || name.includes('fiesta') || name.includes('entretenim') || name.includes('cine') || name.includes('musica') || name.includes('celebrac')) return 'party-popper';
 
   return 'tag';
 };
@@ -7610,7 +7614,7 @@ app.confirmDeleteAdminEvent = function(eventId) {
   if (!evt) return;
 
   const photoCount = (evt.photos || []).length;
-  app.openConfirmModal({
+  app.showConfirmModal({
     title: 'Eliminar Evento',
     message: `¿Estás seguro de eliminar el evento "${evt.title}" y sus ${photoCount} fotografías de la galería? El evento pasará a purga segura de archivos.`,
     confirmText: 'Sí, Eliminar Evento',
@@ -7832,12 +7836,60 @@ app.getEventCategoryLabel = function(catKey) {
   return map[catKey] || (catKey ? String(catKey) : '🎉 Evento');
 };
 
+// Obtención robusta de timestamp de publicación para ordenamiento (prioridad createdAt, fallback publishedAt; NUNCA evt.date)
+app.getEventPublishTimestamp = function(evt) {
+  if (!evt) return 0;
+  // Prioridad 1: createdAt; Prioridad 2: publishedAt (NUNCA usar evt.date ya que representa la fecha de celebración del evento)
+  const raw = (evt.createdAt !== undefined && evt.createdAt !== null) ? evt.createdAt : evt.publishedAt;
+  if (!raw) return 0;
+
+  // Objeto Timestamp de Firestore
+  if (typeof raw === 'object') {
+    if (typeof raw.toMillis === 'function') {
+      try { return raw.toMillis(); } catch(e) {}
+    }
+    if (typeof raw.toDate === 'function') {
+      try { return raw.toDate().getTime(); } catch(e) {}
+    }
+    if (typeof raw.seconds === 'number') {
+      return raw.seconds * 1000 + Math.floor((raw.nanoseconds || 0) / 1000000);
+    }
+    if (typeof raw._seconds === 'number') {
+      return raw._seconds * 1000 + Math.floor((raw._nanoseconds || 0) / 1000000);
+    }
+  }
+
+  // Si es un número (milisegundos o segundos unix)
+  if (typeof raw === 'number') {
+    return raw < 10000000000 ? raw * 1000 : raw;
+  }
+
+  // Si es string de fecha o ISO
+  if (typeof raw === 'string') {
+    const parsed = Date.parse(raw);
+    if (!isNaN(parsed)) return parsed;
+  }
+
+  return 0;
+};
+
 // Formato de fecha legible y elegante
 app.formatEventDate = function(timestamp) {
   if (!timestamp) return '';
   try {
-    const d = new Date(timestamp);
-    if (isNaN(d.getTime())) return '';
+    let ms = 0;
+    if (typeof timestamp === 'object') {
+      if (typeof timestamp.toMillis === 'function') ms = timestamp.toMillis();
+      else if (typeof timestamp.toDate === 'function') ms = timestamp.toDate().getTime();
+      else if (typeof timestamp.seconds === 'number') ms = timestamp.seconds * 1000;
+      else if (typeof timestamp._seconds === 'number') ms = timestamp._seconds * 1000;
+    } else if (typeof timestamp === 'number') {
+      ms = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+    } else if (typeof timestamp === 'string') {
+      ms = Date.parse(timestamp);
+    }
+    if (!ms || isNaN(ms)) return '';
+    const d = new Date(ms);
     return d.toLocaleDateString('es-ES', {
       day: 'numeric',
       month: 'long',
@@ -7846,6 +7898,51 @@ app.formatEventDate = function(timestamp) {
   } catch(e) {
     return '';
   }
+};
+
+// Renderizado de la barra de filtros de categoría de eventos (Unificado con Lucide y estilo de Category Pills de 7DApp)
+app.renderEventCategoryFilters = function() {
+  const container = document.getElementById('event-category-filters');
+  if (!container) return;
+
+  const currentCat = app.currentEventCategory || 'all';
+  const filterOptions = [
+    { id: 'all', label: 'Todas', lucideIcon: 'layers' },
+    ...EVENT_CATEGORIES.map(c => ({
+      id: c.id,
+      label: c.label,
+      lucideIcon: c.lucideIcon || app.getCategoryLucideIcon(c.id)
+    }))
+  ];
+
+  container.innerHTML = filterOptions.map(cat => {
+    const isActive = currentCat === cat.id;
+    const iconSvg = app.createLucideSvgString(cat.lucideIcon, 'cat-pill-lucide', 16);
+    return `
+      <button 
+        type="button" 
+        class="cat-pill-item event-cat-chip${isActive ? ' active' : ''}" 
+        onclick="app.filterEventsByCategory('${cat.id}')"
+        role="tab"
+        aria-selected="${isActive ? 'true' : 'false'}"
+        data-category="${cat.id}"
+        title="Filtrar por ${cat.label}">
+        <span class="cat-pill-icon">${iconSvg}</span>
+        <span class="cat-pill-label">${cat.label}</span>
+      </button>
+    `;
+  }).join('');
+
+  if (typeof app.refreshLucideIcons === 'function') {
+    app.refreshLucideIcons();
+  }
+};
+
+// Cambio reactivo y en memoria de la categoría activa de eventos
+app.filterEventsByCategory = function(categoryKey) {
+  app.currentEventCategory = categoryKey || 'all';
+  app.renderEventCategoryFilters();
+  app.renderPublicEvents();
 };
 
 // Renderizado de flyers destacados bajo la sección de eventos (máximo 5 activos)
@@ -7886,7 +7983,15 @@ app.renderPublicEvents = function() {
   const loading = document.getElementById('events-loading');
   const errorBox = document.getElementById('events-error');
   const emptyState = document.getElementById('events-empty-state');
+  const emptyTitle = document.getElementById('events-empty-title');
+  const emptyDesc = document.getElementById('events-empty-desc');
+  const emptyAction = document.getElementById('events-empty-action');
   const countBadge = document.getElementById('active-events-count');
+
+  // Sincronizar botones de categorías de eventos
+  if (typeof app.renderEventCategoryFilters === 'function') {
+    app.renderEventCategoryFilters();
+  }
 
   if (!grid) return;
   grid.innerHTML = '';
@@ -7909,25 +8014,52 @@ app.renderPublicEvents = function() {
   if (errorBox) errorBox.style.display = 'none';
 
   // 3. Filtrar exclusivamente status === 'active' (excluye draft, archived, deleting y otros)
-  const activeEvents = (app.events || []).filter(e => e && e.status === 'active');
+  const allActiveEvents = (app.events || []).filter(e => e && e.status === 'active');
 
-  // Ordenar del más reciente al más antiguo
-  activeEvents.sort((a, b) => (b.createdAt || b.date || 0) - (a.createdAt || a.date || 0));
+  // 4. Filtrar por categoría seleccionada en memoria (sin lecturas adicionales a Firestore)
+  const currentCat = app.currentEventCategory || 'all';
+  const categoryFilteredEvents = currentCat === 'all'
+    ? allActiveEvents
+    : allActiveEvents.filter(e => e.category === currentCat);
 
+  // 5. Ordenar por fecha de publicación más reciente (prioridad createdAt, fallback a publishedAt; NUNCA por date)
+  categoryFilteredEvents.sort((a, b) => {
+    const timeA = app.getEventPublishTimestamp(a);
+    const timeB = app.getEventPublishTimestamp(b);
+    return timeB - timeA;
+  });
+
+  // 6. Limitar a un máximo de 10 eventos DESPUÉS de aplicar el filtro
+  const visibleEvents = categoryFilteredEvents.slice(0, 10);
+
+  // 7. Actualizar el contador visible
   if (countBadge) {
-    countBadge.textContent = activeEvents.length;
+    countBadge.textContent = visibleEvents.length;
   }
 
-  // 4. Estado de listado vacío
-  if (activeEvents.length === 0) {
-    if (emptyState) emptyState.style.display = 'block';
+  // 8. Estado de listado vacío (con mensaje contextual por categoría y acción para resetear)
+  if (visibleEvents.length === 0) {
+    if (emptyState) {
+      if (currentCat !== 'all') {
+        const catObj = EVENT_CATEGORIES.find(c => c.id === currentCat);
+        const catLabel = catObj ? catObj.label : currentCat;
+        if (emptyTitle) emptyTitle.textContent = `No hay coberturas de ${catLabel} en este momento`;
+        if (emptyDesc) emptyDesc.textContent = 'Próximamente publicaremos coberturas fotográficas para esta categoría.';
+        if (emptyAction) emptyAction.style.display = 'block';
+      } else {
+        if (emptyTitle) emptyTitle.textContent = 'No hay eventos disponibles en este momento';
+        if (emptyDesc) emptyDesc.textContent = 'Próximamente publicaremos nuevas coberturas fotográficas y momentos destacados.';
+        if (emptyAction) emptyAction.style.display = 'none';
+      }
+      emptyState.style.display = 'block';
+    }
     app.renderRecentFlyersForEvents();
     return;
   }
   if (emptyState) emptyState.style.display = 'none';
 
-  // 5. Renderizado de tarjetas públicas
-  activeEvents.forEach(evt => {
+  // 9. Renderizado de tarjetas públicas
+  visibleEvents.forEach(evt => {
     const card = document.createElement('div');
     card.className = 'event-card';
     card.onclick = () => app.openEventDetail(evt.id);
@@ -7936,7 +8068,7 @@ app.renderPublicEvents = function() {
     const validPhotos = (evt.photos || []).filter(p => p && p.url && typeof p.url === 'string' && p.url.trim().length > 0);
     const primaryPhoto = validPhotos[0];
     const catLabel = app.getEventCategoryLabel(evt.category);
-    const dateStr = app.formatEventDate(evt.createdAt);
+    const dateStr = app.formatEventDate(evt.createdAt || evt.publishedAt);
 
     const mediaHtml = primaryPhoto
       ? `<img class="event-card-img" src="${primaryPhoto.url}" alt="${evt.title || 'Evento'}" loading="lazy">`

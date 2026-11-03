@@ -117,6 +117,11 @@
         </div>
 
         <div class="events-container">
+          <!-- Barra de filtros de categoría de eventos -->
+          <div id="event-category-filters" class="events-categories-bar" role="tablist" aria-label="Categorías de eventos">
+            <!-- Renderizado dinámicamente -->
+          </div>
+
           <!-- Sub-barra de conteo de eventos -->
           <div class="feed-subbar events-subbar">
             <div class="feed-count">
@@ -140,8 +145,11 @@
           <!-- Empty state -->
           <div id="events-empty-state" class="empty-state" style="display: none;">
             <div class="empty-icon">📸</div>
-            <h3>No hay eventos disponibles en este momento</h3>
-            <p>Próximamente publicaremos nuevas coberturas fotográficas y momentos destacados.</p>
+            <h3 id="events-empty-title">No hay eventos disponibles en este momento</h3>
+            <p id="events-empty-desc">Próximamente publicaremos nuevas coberturas fotográficas y momentos destacados.</p>
+            <div id="events-empty-action" style="display: none; margin-top: 14px;">
+              <button class="btn btn-secondary btn-sm" onclick="app.filterEventsByCategory('all')">Ver todas las coberturas</button>
+            </div>
           </div>
 
           <!-- Public Events Grid -->
