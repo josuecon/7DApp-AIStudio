@@ -1,12 +1,13 @@
+
 {
-  "name": "7DApp",
-  "short_name": "7DApp",
-  "description": "7DApp - Tu ciudad, en tus manos. Las mejores ofertas y promociones de tu ciudad esta semana.",
+  "name": "Dfarra",
+  "short_name": "Dfarra",
+  "description": "Dfarra - Tu ciudad, en tus manos. Descubre negocios, eventos, ofertas y promociones de tu ciudad.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0E161C",
-  "theme_color": "#0E161C",
+  "background_color": "#0A0A0A",
+  "theme_color": "#0A0A0A",
   "orientation": "portrait-primary",
   "categories": ["shopping", "lifestyle", "business"],
   "icons": [
@@ -14,19 +15,19 @@
       "src": "icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "icons/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }
