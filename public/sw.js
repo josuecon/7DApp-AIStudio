@@ -1,5 +1,5 @@
-// Dfarra- Progressive Web App Service Worker
-const CACHE_NAME = '7dapp-v1.3.1';
+// Dfarra - Progressive Web App Service Worker
+const CACHE_NAME = 'dfarra-v1.0.2';
 
 const STATIC_ASSETS = [
   './',
@@ -10,6 +10,8 @@ const STATIC_ASSETS = [
   'manifest.json',
   'icons/icon-192.png',
   'icons/icon-512.png',
+  'icons/dfarra-logo-horizontal.png',
+  'icons/dfarra-app-icon-512.png',
   'icons/icon.svg'
 ];
 

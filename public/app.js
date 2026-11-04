@@ -1044,7 +1044,7 @@ app.handleQuieroClick = function(promo) {
   // Redirigir a WhatsApp con mensaje automático
   const rawNumber = targetPromo.whatsappNumber || app.settings.adminWhatsapp;
   const cleanNumber = rawNumber.replace(/\D/g, '');
-  const msg = `Hola ${targetPromo.businessName}! Vi su promoción '${targetPromo.title}' en 7D App y quiero aprovecharla.`;
+  const msg = `Hola ${targetPromo.businessName}! Vi su promoción '${targetPromo.title}' en Dfarra y quiero aprovecharla.`;
   window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(msg)}`, '_blank');
 };
 
@@ -1142,7 +1142,7 @@ app.loadCanvasImage = function(src) {
 };
 
 // Convertir URL de imagen en objeto File para Web Share API
-app.fetchImageAsFile = async function(imageUrl, filename = 'imagen-7dapp.jpg') {
+app.fetchImageAsFile = async function(imageUrl, filename = 'imagen-dfarra.jpg') {
   if (!imageUrl) return null;
   try {
     if (imageUrl.startsWith('data:')) {
@@ -1184,24 +1184,24 @@ app.generateBusinessCardImage = async function(biz) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    // 1. Fondo base: Verde Bosque #101B18 con resplandor esmeralda
-    ctx.fillStyle = '#101B18';
+    // 1. Fondo base: Negro principal #0A0A0A con resplandor sobrio Dfarra
+    ctx.fillStyle = '#0A0A0A';
     ctx.fillRect(0, 0, 1200, 630);
 
     const radialGlow = ctx.createRadialGradient(1000, 100, 20, 1000, 100, 500);
-    radialGlow.addColorStop(0, 'rgba(85, 201, 154, 0.18)');
+    radialGlow.addColorStop(0, 'rgba(181, 43, 50, 0.18)');
     radialGlow.addColorStop(1, 'transparent');
     ctx.fillStyle = radialGlow;
     ctx.fillRect(0, 0, 1200, 630);
 
-    // 2. Tarjeta contenedora: Verde Profundo #1C3029
+    // 2. Tarjeta contenedora: Carbón #191919 con borde sobrio
     const pad = 36;
     const cardW = 1200 - pad * 2;
     const cardH = 630 - pad * 2;
     drawCanvasRoundRect(ctx, pad, pad, cardW, cardH, 28);
-    ctx.fillStyle = '#1C3029';
+    ctx.fillStyle = '#191919';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(85, 201, 154, 0.3)';
+    ctx.strokeStyle = 'rgba(181, 43, 50, 0.3)';
     ctx.lineWidth = 2;
     ctx.stroke();
 
@@ -1219,13 +1219,13 @@ app.generateBusinessCardImage = async function(biz) {
       ctx.drawImage(coverImg, pad, pad, cardW, coverH);
     } else {
       const coverGrad = ctx.createLinearGradient(pad, pad, pad + cardW, pad + coverH);
-      coverGrad.addColorStop(0, '#243D34');
-      coverGrad.addColorStop(0.5, '#1C3029');
-      coverGrad.addColorStop(1, '#152520');
+      coverGrad.addColorStop(0, '#242424');
+      coverGrad.addColorStop(0.5, '#191919');
+      coverGrad.addColorStop(1, '#0A0A0A');
       ctx.fillStyle = coverGrad;
       ctx.fillRect(pad, pad, cardW, coverH);
 
-      ctx.strokeStyle = 'rgba(85, 201, 154, 0.12)';
+      ctx.strokeStyle = 'rgba(181, 43, 50, 0.12)';
       ctx.lineWidth = 1.5;
       for (let i = 0; i < cardW; i += 60) {
         ctx.beginPath();
@@ -1238,7 +1238,7 @@ app.generateBusinessCardImage = async function(biz) {
     // Sombra protectora sobre la portada
     const shadowGrad = ctx.createLinearGradient(pad, pad + coverH - 90, pad, pad + coverH);
     shadowGrad.addColorStop(0, 'transparent');
-    shadowGrad.addColorStop(1, 'rgba(28, 48, 41, 0.95)');
+    shadowGrad.addColorStop(1, 'rgba(25, 25, 25, 0.95)');
     ctx.fillStyle = shadowGrad;
     ctx.fillRect(pad, pad + coverH - 90, cardW, 90);
     ctx.restore();
@@ -1250,7 +1250,7 @@ app.generateBusinessCardImage = async function(biz) {
 
     ctx.save();
     drawCanvasRoundRect(ctx, logoX, logoY, logoSize, logoSize, 22);
-    ctx.fillStyle = '#14231E';
+    ctx.fillStyle = '#191919';
     ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
     ctx.shadowBlur = 18;
     ctx.shadowOffsetY = 6;
@@ -1267,7 +1267,7 @@ app.generateBusinessCardImage = async function(biz) {
     if (logoImg) {
       ctx.drawImage(logoImg, logoX, logoY, logoSize, logoSize);
     } else {
-      ctx.fillStyle = '#243D34';
+      ctx.fillStyle = '#242424';
       ctx.fillRect(logoX, logoY, logoSize, logoSize);
       ctx.font = '56px system-ui, sans-serif';
       ctx.textAlign = 'center';
@@ -1277,7 +1277,7 @@ app.generateBusinessCardImage = async function(biz) {
     ctx.restore();
 
     drawCanvasRoundRect(ctx, logoX, logoY, logoSize, logoSize, 22);
-    ctx.strokeStyle = '#55C99A';
+    ctx.strokeStyle = '#B52B32';
     ctx.lineWidth = 4;
     ctx.stroke();
 
@@ -1285,8 +1285,8 @@ app.generateBusinessCardImage = async function(biz) {
     const textX = logoX + logoSize + 32;
     let textY = pad + coverH + 20;
 
-    // Nombre del comercio (Blanco Suave)
-    ctx.fillStyle = '#EAF4EF';
+    // Nombre del comercio (Blanco Puro)
+    ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 38px "Plus Jakarta Sans", system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -1301,9 +1301,9 @@ app.generateBusinessCardImage = async function(biz) {
     const badgeH = 34;
 
     drawCanvasRoundRect(ctx, textX, textY, badgeW, badgeH, 17);
-    ctx.fillStyle = 'rgba(85, 201, 154, 0.15)';
+    ctx.fillStyle = 'rgba(181, 43, 50, 0.15)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(85, 201, 154, 0.35)';
+    ctx.strokeStyle = 'rgba(181, 43, 50, 0.35)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
@@ -1312,14 +1312,14 @@ app.generateBusinessCardImage = async function(biz) {
     textY += 50;
 
     // Descripción
-    ctx.fillStyle = '#9CB7AC';
+    ctx.fillStyle = '#A6A6A6';
     ctx.font = '500 20px "Plus Jakarta Sans", system-ui, sans-serif';
-    const desc = biz.description || 'Comercio oficial verificado en 7D App. Consulta promociones activas y contacto directo.';
+    const desc = biz.description || 'Comercio oficial verificado en Dfarra. Consulta promociones activas y contacto directo.';
     drawCanvasWrappedText(ctx, desc, textX, textY, cardW - (textX - pad) - 40, 28, 2);
 
     // 6. Barra inferior institucional
     const footerY = pad + cardH - 58;
-    ctx.strokeStyle = 'rgba(85, 201, 154, 0.15)';
+    ctx.strokeStyle = 'rgba(181, 43, 50, 0.15)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(pad + 30, footerY);
@@ -1327,18 +1327,18 @@ app.generateBusinessCardImage = async function(biz) {
     ctx.stroke();
 
     ctx.font = 'bold 17px "Plus Jakarta Sans", system-ui, sans-serif';
-    ctx.fillStyle = '#EAF4EF';
-    ctx.fillText('✨ 7D App • Directorio Comercial de Venezuela', pad + 30, footerY + 18);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText('✨ Dfarra • Directorio Comercial de Venezuela', pad + 30, footerY + 18);
 
     if (biz.hasDelivery) {
-      ctx.fillStyle = '#55C99A';
+      ctx.fillStyle = '#25D366';
       ctx.fillText('🛵 Delivery Disponible', pad + 480, footerY + 18);
     }
 
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#55C99A';
+    ctx.fillStyle = '#B52B32';
     ctx.font = 'bold 17px "Plus Jakarta Sans", system-ui, sans-serif';
-    ctx.fillText('guia7d.web.app', pad + cardW - 30, footerY + 18);
+    ctx.fillText('dfarra.web.app', pad + cardW - 30, footerY + 18);
 
     return new Promise((resolve) => {
       canvas.toBlob((blob) => {
@@ -1350,12 +1350,12 @@ app.generateBusinessCardImage = async function(biz) {
       }, 'image/jpeg', 0.92);
     });
   } catch (err) {
-    console.warn('[7D App] Error generando tarjeta de comercio en canvas:', err);
+    console.warn('[Dfarra] Error generando tarjeta de comercio en canvas:', err);
     return null;
   }
 };
 
-// Generar tarjeta promocional oficial de 7D App en Canvas (Emerald Select)
+// Generar tarjeta promocional oficial de Dfarra en Canvas
 app.generateAppPromoCardImage = async function() {
   try {
     const canvas = document.createElement('canvas');
@@ -1364,12 +1364,12 @@ app.generateAppPromoCardImage = async function() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    // 1. Fondo base: Verde Bosque #101B18 con ambiente luminoso
-    ctx.fillStyle = '#101B18';
+    // 1. Fondo base: Negro principal #0A0A0A con ambiente sobrio
+    ctx.fillStyle = '#0A0A0A';
     ctx.fillRect(0, 0, 1200, 630);
 
     const rad1 = ctx.createRadialGradient(250, 200, 20, 250, 200, 600);
-    rad1.addColorStop(0, 'rgba(85, 201, 154, 0.22)');
+    rad1.addColorStop(0, 'rgba(181, 43, 50, 0.22)');
     rad1.addColorStop(1, 'transparent');
     ctx.fillStyle = rad1;
     ctx.fillRect(0, 0, 1200, 630);
@@ -1380,34 +1380,37 @@ app.generateAppPromoCardImage = async function() {
     ctx.fillStyle = rad2;
     ctx.fillRect(0, 0, 1200, 630);
 
-    // 2. Tarjeta contenedora con gradiente esmeralda
+    // 2. Tarjeta contenedora con gradiente carbón
     const pad = 36;
     const cardW = 1200 - pad * 2;
     const cardH = 630 - pad * 2;
     drawCanvasRoundRect(ctx, pad, pad, cardW, cardH, 28);
     const cardGrad = ctx.createLinearGradient(pad, pad, pad + cardW, pad + cardH);
-    cardGrad.addColorStop(0, '#1C3029');
-    cardGrad.addColorStop(1, '#12211C');
+    cardGrad.addColorStop(0, '#191919');
+    cardGrad.addColorStop(1, '#121212');
     ctx.fillStyle = cardGrad;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(85, 201, 154, 0.35)';
+    ctx.strokeStyle = 'rgba(181, 43, 50, 0.35)';
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // 3. Emblema oficial de 7D App
+    // 3. Emblema oficial de Dfarra
     const logoX = pad + 60;
     const logoY = pad + 65;
     const logoSize = 140;
 
-    let appIconImg = await app.loadCanvasImage('icons/icon-512.png');
+    let appIconImg = await app.loadCanvasImage('icons/dfarra-app-icon-512.png');
+    if (!appIconImg) {
+      appIconImg = await app.loadCanvasImage('icons/icon-512.png');
+    }
     if (!appIconImg) {
       appIconImg = await app.loadCanvasImage('icons/icon.svg');
     }
 
     ctx.save();
     drawCanvasRoundRect(ctx, logoX, logoY, logoSize, logoSize, 26);
-    ctx.fillStyle = '#14231E';
-    ctx.shadowColor = 'rgba(85, 201, 154, 0.35)';
+    ctx.fillStyle = '#242424';
+    ctx.shadowColor = 'rgba(181, 43, 50, 0.35)';
     ctx.shadowBlur = 24;
     ctx.shadowOffsetY = 6;
     ctx.fill();
@@ -1419,18 +1422,18 @@ app.generateAppPromoCardImage = async function() {
     if (appIconImg) {
       ctx.drawImage(appIconImg, logoX, logoY, logoSize, logoSize);
     } else {
-      ctx.fillStyle = '#1C3029';
+      ctx.fillStyle = '#191919';
       ctx.fillRect(logoX, logoY, logoSize, logoSize);
-      ctx.font = 'bold 70px "Plus Jakarta Sans", system-ui, sans-serif';
-      ctx.fillStyle = '#55C99A';
+      ctx.font = 'bold 36px "Plus Jakarta Sans", system-ui, sans-serif';
+      ctx.fillStyle = '#B52B32';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('7D', logoX + logoSize / 2, logoY + logoSize / 2);
+      ctx.fillText('Dfarra', logoX + logoSize / 2, logoY + logoSize / 2);
     }
     ctx.restore();
 
     drawCanvasRoundRect(ctx, logoX, logoY, logoSize, logoSize, 26);
-    ctx.strokeStyle = '#55C99A';
+    ctx.strokeStyle = '#B52B32';
     ctx.lineWidth = 3;
     ctx.stroke();
 
@@ -1445,19 +1448,19 @@ app.generateAppPromoCardImage = async function() {
     ctx.font = 'bold 15px "Plus Jakarta Sans", system-ui, sans-serif';
     const topBadgeW = ctx.measureText(badgeText).width + 24;
     drawCanvasRoundRect(ctx, textX, textY, topBadgeW, 28, 14);
-    ctx.fillStyle = 'rgba(85, 201, 154, 0.16)';
+    ctx.fillStyle = 'rgba(181, 43, 50, 0.16)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(85, 201, 154, 0.4)';
+    ctx.strokeStyle = 'rgba(181, 43, 50, 0.4)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    ctx.fillStyle = '#55C99A';
+    ctx.fillStyle = '#B52B32';
     ctx.fillText(badgeText, textX + 12, textY + 6);
     textY += 40;
 
-    ctx.fillStyle = '#EAF4EF';
+    ctx.fillStyle = '#FFFFFF';
     ctx.font = '900 52px "Plus Jakarta Sans", system-ui, sans-serif';
-    ctx.fillText('7D App', textX, textY);
+    ctx.fillText('Dfarra', textX, textY);
     textY += 60;
 
     ctx.fillStyle = '#F5E9C9';
@@ -1465,16 +1468,16 @@ app.generateAppPromoCardImage = async function() {
     ctx.fillText('Promociones y Ofertas de la Semana', textX, textY);
     textY += 36;
 
-    ctx.fillStyle = '#9CB7AC';
+    ctx.fillStyle = '#A6A6A6';
     ctx.font = '500 21px "Plus Jakarta Sans", system-ui, sans-serif';
     ctx.fillText('Descubre lo mejor de tu ciudad. Contacto directo con comercios por WhatsApp.', textX, textY);
 
     // 5. Píldoras de características
     const pillsY = pad + 275;
     const features = [
-      { icon: '🏷️', label: 'Ofertas Semanales', color: '#EAF4EF', bg: 'rgba(85, 201, 154, 0.15)' },
-      { icon: '🏬', label: 'Directorio Comercial', color: '#EAF4EF', bg: 'rgba(85, 201, 154, 0.15)' },
-      { icon: '💬', label: 'Trato Directo WhatsApp', color: '#25D366', bg: 'rgba(37, 211, 102, 0.18)' }
+      { icon: '🏷️', label: 'Ofertas Semanales', color: '#FFFFFF', bg: 'rgba(181, 43, 50, 0.15)', border: 'rgba(181, 43, 50, 0.3)' },
+      { icon: '🏬', label: 'Directorio Comercial', color: '#FFFFFF', bg: 'rgba(181, 43, 50, 0.15)', border: 'rgba(181, 43, 50, 0.3)' },
+      { icon: '💬', label: 'Trato Directo WhatsApp', color: '#25D366', bg: 'rgba(37, 211, 102, 0.18)', border: 'rgba(37, 211, 102, 0.35)' }
     ];
 
     let pillX = pad + 60;
@@ -1485,7 +1488,7 @@ app.generateAppPromoCardImage = async function() {
       drawCanvasRoundRect(ctx, pillX, pillsY, fW, 44, 22);
       ctx.fillStyle = feat.bg;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(85, 201, 154, 0.3)';
+      ctx.strokeStyle = feat.border;
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
@@ -1502,27 +1505,27 @@ app.generateAppPromoCardImage = async function() {
 
     drawCanvasRoundRect(ctx, btnX, btnY, btnW, btnH, 34);
     const btnGrad = ctx.createLinearGradient(btnX, btnY, btnX + btnW, btnY);
-    btnGrad.addColorStop(0, '#55C99A');
-    btnGrad.addColorStop(1, '#3DA67C');
+    btnGrad.addColorStop(0, '#B52B32');
+    btnGrad.addColorStop(1, '#982329');
     ctx.fillStyle = btnGrad;
     ctx.fill();
 
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#0C1814';
+    ctx.fillStyle = '#FFFFFF';
     ctx.font = '900 24px "Plus Jakarta Sans", system-ui, sans-serif';
-    ctx.fillText('👉 Entra gratis a https://guia7d.web.app y descubre promociones', btnX + btnW / 2, btnY + 22);
+    ctx.fillText('👉 Entra gratis a https://dfarra.web.app y descubre promociones', btnX + btnW / 2, btnY + 22);
 
     return new Promise((resolve) => {
       canvas.toBlob((blob) => {
         if (blob) {
-          resolve(new File([blob], '7dapp-promociones.jpg', { type: 'image/jpeg' }));
+          resolve(new File([blob], 'dfarra-promociones.jpg', { type: 'image/jpeg' }));
         } else {
           resolve(null);
         }
       }, 'image/jpeg', 0.92);
     });
   } catch (err) {
-    console.warn('[7D App] Error generando tarjeta de app en canvas:', err);
+    console.warn('[Dfarra] Error generando tarjeta de app en canvas:', err);
     return null;
   }
 };
@@ -1601,12 +1604,12 @@ app.executeShare = async function(titleOrOptions, textParam, urlParam, fileParam
   window.open(waUrl, '_blank');
 };
 
-// Compartir la Aplicación 7D App
+// Compartir la Aplicación Dfarra
 app.shareApp = async function() {
   const currentCity = (app.cities.find(c => c.id === app.currentCityId) || {}).name || 'tu ciudad';
-  const url = 'https://guia7d.web.app';
-  const title = '7D App - Promociones de la Semana';
-  const text = `✨ ¡Descubre las mejores promociones y comercios de la semana en ${currentCity} con 7D App!\n\n🛍️ Ofertas actualizadas, directorio de tiendas y contacto directo por WhatsApp:\n${url}`;
+  const url = 'https://dfarra.web.app';
+  const title = 'Dfarra - Tu ciudad, en tus manos';
+  const text = `✨ ¡Descubre las mejores promociones y comercios de la semana en ${currentCity} con Dfarra!\n\n🛍️ Ofertas actualizadas, directorio de tiendas y contacto directo por WhatsApp:\n${url}`;
 
   app.showToast('⏳ Preparando presentación visual...');
   const cardFile = await app.generateAppPromoCardImage();
@@ -1630,17 +1633,17 @@ app.sharePromo = async function(promo) {
   const bizTag = bizName ? ` de ${bizName}` : '';
   const locationTag = cityName ? ` en ${cityName}` : '';
 
-  const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://guia7d.web.app';
+  const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://dfarra.web.app';
   const pathname = window.location.pathname || '/';
   const url = `${origin}${pathname}#promo=${promo.id}`;
-  const title = `${promo.title || 'Oferta'} | ${bizName || '7D App'}`;
+  const title = `${promo.title || 'Oferta'} | ${bizName || 'Dfarra'}`;
 
   let text = `🔥 ¡Oferta destacada${bizTag}${locationTag}!\n\n📌 ${promo.title || 'Promoción especial'}`;
   if (promo.description) {
     const cleanDesc = promo.description.length > 120 ? promo.description.slice(0, 117) + '...' : promo.description;
     text += `\n💬 ${cleanDesc}`;
   }
-  text += `\n\n✨ Mira todos los detalles y contacta directo al comercio en 7D App:\n${url}`;
+  text += `\n\n✨ Mira todos los detalles y contacta directo al comercio en Dfarra:\n${url}`;
 
   let imageFile = null;
   if (promo.imageUrl) {
@@ -1681,12 +1684,12 @@ app.shareBusiness = async function(biz) {
     app.shareApp();
     return;
   }
-  const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://guia7d.web.app';
+  const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://dfarra.web.app';
   const pathname = window.location.pathname || '/';
   const url = `${origin}${pathname}#biz=${biz.id}`;
-  const title = `${biz.name} en 7D App`;
+  const title = `${biz.name} en Dfarra`;
 
-  let text = `🏬 ¡Conoce a ${biz.name} en 7D App!`;
+  let text = `🏬 ¡Conoce a ${biz.name} en Dfarra!`;
   if (biz.categoryName) {
     text += `\n🏷️ Categoría: ${biz.categoryName}`;
   }
@@ -2886,7 +2889,7 @@ newPromo.imageUrl = imageUrl;
     const succRef = document.getElementById('success-ref');
     if (succRef) succRef.textContent = ref;
 
-    const adminMsg = `Hola! Acabo de publicar el anuncio de '${businessName}' en 7D App. Mi referencia de pago es: ${ref} por $${(app.settings.publicationPrice || 0.99).toFixed(2)}.`;
+    const adminMsg = `Hola! Acabo de publicar el anuncio de '${businessName}' en Dfarra. Mi referencia de pago es: ${ref} por $${(app.settings.publicationPrice || 0.99).toFixed(2)}.`;
     const cleanAdmin = (app.settings.adminWhatsapp || '+584228045737').replace(/\D/g, '');
     const proofBtn = document.getElementById('send-proof-whatsapp-btn');
     if (proofBtn) proofBtn.href = `https://wa.me/${cleanAdmin}?text=${encodeURIComponent(adminMsg)}`;
@@ -2935,8 +2938,10 @@ app.submitPromotionForm = app.submitPromotion;
 // ==========================================================================
 
 const ADMIN_EMAILS = ['josueco@gmail.com', 'josueco2023@gmail.com', 'milabuenobrito@gmail.com'];
-const isAdminEmail = (email) => !!email && ADMIN_EMAILS.includes(email.toLowerCase().trim());
+const isAdminEmail = (email) => !!email && ADMIN_EMAILS.map(e => e.toLowerCase().trim()).includes(String(email).toLowerCase().trim());
 
+app.ADMIN_EMAILS = ADMIN_EMAILS;
+app.isAdminEmail = isAdminEmail;
 app.adminAuth = null;
 app.isAdminLoggedIn = false;
 
@@ -3879,7 +3884,7 @@ app.renderFeaturedCategoriesManager = function() {
       alertBox.className = 'featured-alert alert-warning';
       alertBox.style.display = 'block';
       alertBox.innerHTML = `
-        <strong>⚠️ Aviso importante:</strong> Actualmente hay solo ${allActiveCategories.length} categorías activas en 7D App. 
+        <strong>⚠️ Aviso importante:</strong> Actualmente hay solo ${allActiveCategories.length} categorías activas en Dfarra. 
         Se requieren al menos 4 categorías activas para completar la cuadrícula de la portada. Puedes activar más categorías en la sección inferior.
       `;
     } else if (!isComplete) {
@@ -4345,7 +4350,7 @@ app.detectNearestCity();
           const data = doc.data() || {};
           app.settings = { ...app.settings, ...data };
           var durationDays = parseInt(app.settings.publicationDurationDays) || 7;
-          var heroBadge = document.querySelector('.hero-badge'); if (heroBadge) heroBadge.textContent = String.fromCodePoint(0x1F525) + ' ANÚNCIATE HOY POR ' + durationDays + ' DÍAS';
+          var heroBadge = document.querySelector('#feed-hero-badge, #screen-feed .hero-badge'); if (heroBadge) heroBadge.textContent = String.fromCodePoint(0x1F525) + ' ANÚNCIATE HOY POR ' + durationDays + ' DÍAS';
           var pricingHeadline = document.querySelector('.pricing-headline'); if (pricingHeadline) pricingHeadline.textContent = 'PUBLICA DURANTE ' + durationDays + ' DÍAS';
           app.updatePublishSelects();
           app.renderCategories();
@@ -5229,7 +5234,7 @@ app.renderDirectory = function() {
           <span class="business-meta-tag">•</span>
           <span class="business-meta-tag">📍 ${biz.cityName || cityName}</span>
         </div>
-        <p class="business-desc-clamp">${biz.description || 'Comercio verificado en 7D App.'}</p>
+        <p class="business-desc-clamp">${biz.description || 'Comercio verificado en Dfarra.'}</p>
         <div class="business-card-footer">
           <span class="delivery-indicator">${biz.hasDelivery ? '🛵 Delivery disponible' : '🏬 Retiro en local'}</span>
           <div style="display: flex; align-items: center; gap: 8px;">
@@ -5470,7 +5475,7 @@ app.openBusinessProfile = function(bizId) {
   if (waBtn) {
     if (biz.whatsapp) {
       const cleanPhone = (biz.whatsapp || '').replace(/[^0-9]/g, '');
-      const msg = encodeURIComponent(`Hola ${biz.name}, los vi en el Directorio de 7D App y quisiera consultar información.`);
+      const msg = encodeURIComponent(`Hola ${biz.name}, los vi en el Directorio de Dfarra y quisiera consultar información.`);
       waBtn.href = `https://wa.me/${cleanPhone}?text=${msg}`;
       waBtn.style.display = 'inline-flex';
     } else {
@@ -7524,7 +7529,7 @@ app.handleAdminEventSubmit = async function(event) {
       createdAt: (existingEvt && existingEvt.createdAt) || Date.now(),
       updatedAt: Date.now(),
       authorUid: (existingEvt && existingEvt.authorUid) || adminUser.uid || 'admin',
-      authorEmail: (existingEvt && existingEvt.authorEmail) || adminUser.email || 'admin@7dapp.com'
+      authorEmail: (existingEvt && existingEvt.authorEmail) || adminUser.email || 'admin@dfarra.com'
     };
 
     if (btnSave) {
@@ -8203,12 +8208,12 @@ app.closeEventDetail = function() {
 // Compartir evento con Web Share API y alternativa clipboard
 app.shareEvent = async function(event) {
   if (!event) return;
-  const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://guia7d.web.app';
+  const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://dfarra.web.app';
   const pathname = window.location.pathname || '/';
   const url = `${origin}${pathname}#event=${event.id}`;
   const catLabel = app.getEventCategoryLabel(event.category);
-  const title = `${event.title || 'Evento'} | 7D App`;
-  let text = `📸 ¡Cobertura exclusiva en 7D App!\n\n✨ ${event.title}\n🏷️ ${catLabel}`;
+  const title = `${event.title || 'Evento'} | Dfarra`;
+  let text = `📸 ¡Cobertura exclusiva en Dfarra!\n\n✨ ${event.title}\n🏷️ ${catLabel}`;
   if (event.review) {
     const cleanReview = event.review.length > 140 ? event.review.slice(0, 137) + '...' : event.review;
     text += `\n\n💬 ${cleanReview}`;
@@ -8226,7 +8231,7 @@ app.shareEvent = async function(event) {
       return;
     } catch (err) {
       if (err.name === 'AbortError') return; // Cancelado voluntariamente
-      console.warn('[7D App] Falló Web Share, usando fallback:', err);
+      console.warn('[Dfarra] Falló Web Share, usando fallback:', err);
     }
   }
 
@@ -8358,12 +8363,12 @@ app.prevEventPhoto = function() {
   if (isStandalone || dismissed()) return;
 
   if (isIOS) {
-    if (title) title.textContent = 'Instalar 7D App';
+    if (title) title.textContent = 'Instalar Dfarra';
     if (message) message.textContent = 'Pulsa Compartir y luego “Agregar a pantalla de inicio”.';
     if (installButton) {
       installButton.textContent = 'Cómo instalar';
       installButton.onclick = () => {
-        alert('Para instalar 7D App en tu iPhone o iPad:\n\n1. Abre esta página en Safari.\n2. Pulsa el botón Compartir.\n3. Selecciona “Agregar a pantalla de inicio”.\n4. Confirma pulsando “Agregar”.');
+        alert('Para instalar Dfarra en tu iPhone o iPad:\n\n1. Abre esta página en Safari.\n2. Pulsa el botón Compartir.\n3. Selecciona “Agregar a pantalla de inicio”.\n4. Confirma pulsando “Agregar”.');
       };
     }
     showBanner();
@@ -8395,7 +8400,7 @@ app.prevEventPhoto = function() {
 // 15. INICIALIZACIÓN AL CARGAR EL DOM
 // ==========================================================================
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('[7D App] Motor web inicializado.');
+  console.log('[Dfarra] Motor web inicializado.');
 
   // Renderizar componentes principales de inmediato
   app.renderPublicEvents();

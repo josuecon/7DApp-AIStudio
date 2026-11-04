@@ -900,7 +900,7 @@ export function getAuthorizedAdminEmails(): string[] {
     .map(e => e.trim().toLowerCase())
     .filter(Boolean);
 
-  const set = new Set([...parsed, ...DEFAULT_ADMIN_EMAILS]);
+  const set = new Set([...parsed, ...DEFAULT_ADMIN_EMAILS.map(e => e.trim().toLowerCase())]);
   return Array.from(set);
 }
 

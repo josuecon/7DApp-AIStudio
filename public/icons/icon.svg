@@ -11,7 +11,7 @@
     <path d="M448 250 V392 C448 401 441 407 432 407 H400"/>
   </g>
 
-  <g fill="none" stroke="#FF0000" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="#B52B32" stroke-linecap="round" stroke-linejoin="round">
     <!-- Trazo horizontal -->
     <path d="M42 188 H277" stroke-width="25" stroke-linecap="butt"/>
     <!-- Símbolo circular -->
