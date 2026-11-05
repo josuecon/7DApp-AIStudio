@@ -1,5 +1,5 @@
 // Dfarra - Progressive Web App Service Worker
-const CACHE_NAME = 'dfarra-v1.0.2';
+const CACHE_NAME = 'dfarra-v1.0.3';
 
 const STATIC_ASSETS = [
   './',

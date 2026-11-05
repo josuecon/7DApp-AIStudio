@@ -183,6 +183,11 @@ app.showScreen = function(screenName) {
     app.currentEvent = null;
   }
   const isProfileModalActive = app.currentProfileBiz && document.getElementById('modal-business-profile')?.classList.contains('active');
+  if (screenName !== 'detail' && screenName !== 'event-detail' && !isProfileModalActive) {
+    if (typeof app.resetSocialMeta === 'function') {
+      app.resetSocialMeta();
+    }
+  }
   if (screenName === 'feed' || screenName === 'detail' || screenName === 'events' || isProfileModalActive) {
     app.startCountdownTicker();
   } else {
@@ -1021,6 +1026,14 @@ app.openDetail = function(promoId) {
 
   if (socialsBox) socialsBox.style.display = hasSocials ? 'block' : 'none';
 
+  // Metadatos sociales dinámicos Open Graph y Twitter Cards
+  app.updateSocialMeta({
+    title: `${promo.title || 'Oferta'} | ${promo.businessName || 'Dfarra'}`,
+    description: promo.description ? promo.description.slice(0, 150) : `Oferta destacada en Dfarra - ${cityName}`,
+    image: promo.imageUrl || 'https://dfarra.web.app/icons/dfarra-app-icon-512.png',
+    url: `${window.location.origin}${window.location.pathname}#promo=${promo.id}`
+  });
+
   app.showScreen('detail');
 };
 
@@ -1123,6 +1136,29 @@ function drawCanvasWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines =
   }
 }
 
+// Helper para dibujar imagen con ajuste 'cover' (aspect ratio proporcional sin deformación)
+function drawCanvasImageCover(ctx, img, x, y, w, h) {
+  if (!img) return;
+  const imgW = img.naturalWidth || img.width;
+  const imgH = img.naturalHeight || img.height;
+  if (!imgW || !imgH) return;
+  const imgRatio = imgW / imgH;
+  const targetRatio = w / h;
+  let sW, sH, sX, sY;
+  if (imgRatio > targetRatio) {
+    sH = imgH;
+    sW = imgH * targetRatio;
+    sX = (imgW - sW) / 2;
+    sY = 0;
+  } else {
+    sW = imgW;
+    sH = imgW / targetRatio;
+    sX = 0;
+    sY = (imgH - sH) / 2;
+  }
+  ctx.drawImage(img, sX, sY, sW, sH, x, y, w, h);
+}
+
 // Cargar imagen de forma asíncrona para composición en canvas
 app.loadCanvasImage = function(src) {
   return new Promise((resolve) => {
@@ -1216,7 +1252,7 @@ app.generateBusinessCardImage = async function(biz) {
       coverImg = await app.loadCanvasImage(biz.coverUrl);
     }
     if (coverImg) {
-      ctx.drawImage(coverImg, pad, pad, cardW, coverH);
+      drawCanvasImageCover(ctx, coverImg, pad, pad, cardW, coverH);
     } else {
       const coverGrad = ctx.createLinearGradient(pad, pad, pad + cardW, pad + coverH);
       coverGrad.addColorStop(0, '#242424');
@@ -1242,6 +1278,22 @@ app.generateBusinessCardImage = async function(biz) {
     ctx.fillStyle = shadowGrad;
     ctx.fillRect(pad, pad + coverH - 90, cardW, 90);
     ctx.restore();
+
+    // Insignia institucional Dfarra en esquina superior derecha
+    let dfarraLogo = await app.loadCanvasImage('icons/dfarra-logo-horizontal.png');
+    if (dfarraLogo) {
+      const logoH = 34;
+      const logoW = (dfarraLogo.naturalWidth / dfarraLogo.naturalHeight) * logoH || 110;
+      const badgeX = pad + cardW - logoW - 20;
+      const badgeY = pad + 16;
+      drawCanvasRoundRect(ctx, badgeX - 10, badgeY - 6, logoW + 20, logoH + 12, 10);
+      ctx.fillStyle = 'rgba(10, 10, 10, 0.76)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(181, 43, 50, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.drawImage(dfarraLogo, badgeX, badgeY, logoW, logoH);
+    }
 
     // 4. Logotipo del comercio
     const logoX = pad + 40;
@@ -1530,6 +1582,421 @@ app.generateAppPromoCardImage = async function() {
   }
 };
 
+// Generar tarjeta promocional visual de un Evento en Canvas (1200x630 px - Coberturas Exclusivas)
+app.generateEventCardImage = async function(event) {
+  if (!event) return null;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 630;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // 1. Fondo base negro principal #0A0A0A
+    ctx.fillStyle = '#0A0A0A';
+    ctx.fillRect(0, 0, 1200, 630);
+
+    // Selección de fotografía principal / portada
+    const validPhotos = (Array.isArray(event.photos) ? event.photos : []).filter(
+      p => p && p.url && typeof p.url === 'string' && p.url.trim().length > 0
+    );
+    const coverUrl = event.coverUrl || (validPhotos.length > 0 ? validPhotos[0].url : null);
+
+    let coverImg = null;
+    if (coverUrl) {
+      coverImg = await app.loadCanvasImage(coverUrl);
+    }
+
+    if (coverImg) {
+      // 2.A RENDERIZADO HERO CON PORTADA REAL A SANGRE COMPLETA
+      drawCanvasImageCover(ctx, coverImg, 0, 0, 1200, 630);
+
+      // Degradado superior para legibilidad de logo y badges
+      const topGrad = ctx.createLinearGradient(0, 0, 0, 170);
+      topGrad.addColorStop(0, 'rgba(10, 10, 10, 0.90)');
+      topGrad.addColorStop(0.6, 'rgba(10, 10, 10, 0.45)');
+      topGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(0, 0, 1200, 170);
+
+      // Degradado inferior cinematográfico para legibilidad absoluta de textos
+      const bottomGrad = ctx.createLinearGradient(0, 190, 0, 630);
+      bottomGrad.addColorStop(0, 'transparent');
+      bottomGrad.addColorStop(0.35, 'rgba(10, 10, 10, 0.65)');
+      bottomGrad.addColorStop(0.7, 'rgba(10, 10, 10, 0.94)');
+      bottomGrad.addColorStop(1, '#0A0A0A');
+      ctx.fillStyle = bottomGrad;
+      ctx.fillRect(0, 190, 1200, 440);
+
+      // Resplandor sobrio de acento rojo de marca en esquina
+      const accentGlow = ctx.createRadialGradient(1120, 90, 10, 1120, 90, 480);
+      accentGlow.addColorStop(0, 'rgba(181, 43, 50, 0.35)');
+      accentGlow.addColorStop(1, 'transparent');
+      ctx.fillStyle = accentGlow;
+      ctx.fillRect(0, 0, 1200, 630);
+    } else {
+      // 2.B HERO INSTITUCIONAL DFARRA (Sin fotografía de portada)
+      const radBg = ctx.createRadialGradient(600, 315, 40, 600, 315, 600);
+      radBg.addColorStop(0, 'rgba(181, 43, 50, 0.24)');
+      radBg.addColorStop(0.65, 'rgba(25, 25, 25, 0.95)');
+      radBg.addColorStop(1, '#0A0A0A');
+      ctx.fillStyle = radBg;
+      ctx.fillRect(0, 0, 1200, 630);
+
+      // Contenedor tarjeta interior
+      const pad = 36;
+      drawCanvasRoundRect(ctx, pad, pad, 1200 - pad * 2, 630 - pad * 2, 28);
+      ctx.fillStyle = '#191919';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(181, 43, 50, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Icono central fotográfico watermark
+      ctx.fillStyle = 'rgba(181, 43, 50, 0.14)';
+      ctx.font = '160px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('📸', 600, 260);
+    }
+
+    // 3. Borde elegante exterior Dfarra
+    ctx.strokeStyle = 'rgba(181, 43, 50, 0.45)';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(10, 10, 1200 - 20, 630 - 20);
+
+    // 4. Barra Superior: Logotipo Oficial Dfarra y Pills
+    const padX = 48;
+    const topY = 38;
+
+    // Logotipo Oficial Horizontal Dfarra
+    let dfarraLogo = await app.loadCanvasImage('icons/dfarra-logo-horizontal.png');
+    if (dfarraLogo) {
+      const logoH = 46;
+      const logoW = (dfarraLogo.naturalWidth / dfarraLogo.naturalHeight) * logoH || 150;
+      ctx.drawImage(dfarraLogo, padX, topY, logoW, logoH);
+    } else {
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.font = '900 36px "Plus Jakarta Sans", system-ui, sans-serif';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText('Dfarra', padX, topY);
+      ctx.fillStyle = '#B52B32';
+      ctx.fillText('•', padX + 115, topY);
+    }
+
+    // Badge de Categoría a la derecha
+    const catLabel = app.getEventCategoryLabel(event.category) || 'Cobertura de Evento';
+    ctx.font = 'bold 20px "Plus Jakarta Sans", system-ui, sans-serif';
+    const catText = catLabel.toUpperCase();
+    const catBadgeW = ctx.measureText(catText).width + 36;
+    const catBadgeH = 46;
+    const catBadgeX = 1200 - padX - catBadgeW;
+
+    drawCanvasRoundRect(ctx, catBadgeX, topY, catBadgeW, catBadgeH, 23);
+    ctx.fillStyle = 'rgba(25, 25, 25, 0.88)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(181, 43, 50, 0.65)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#F5E9C9';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(catText, catBadgeX + catBadgeW / 2, topY + catBadgeH / 2);
+
+    // Badge de conteo de fotos si hay más de 1
+    if (validPhotos.length > 1) {
+      const countText = `📷 ${validPhotos.length} FOTOS`;
+      ctx.font = 'bold 16px "Plus Jakarta Sans", system-ui, sans-serif';
+      const countBadgeW = ctx.measureText(countText).width + 26;
+      const countBadgeX = catBadgeX - countBadgeW - 14;
+      drawCanvasRoundRect(ctx, countBadgeX, topY + 4, countBadgeW, 38, 19);
+      ctx.fillStyle = 'rgba(181, 43, 50, 0.28)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(181, 43, 50, 0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(countText, countBadgeX + countBadgeW / 2, topY + 4 + 19);
+    }
+
+    // 5. Contenido Principal del Evento (Zona Inferior)
+    const textStartX = padX;
+    let contentY = 365;
+
+    // Eyebrow / Tagline oficial
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = 'bold 18px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillStyle = '#B52B32';
+    ctx.fillText('COBERTURA EXCLUSIVA', textStartX, contentY);
+    contentY += 32;
+
+    // Título del evento (Blanco puro, hasta 2 líneas)
+    ctx.font = '900 44px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillStyle = '#FFFFFF';
+    const eventTitle = (event.title || 'Cobertura de Evento Especial').trim();
+    drawCanvasWrappedText(ctx, eventTitle, textStartX, contentY, 1200 - padX * 2, 50, 2);
+    contentY += 95;
+
+    // Fila de Metadatos: Ciudad, Fecha
+    const cityName = event.cityName || (app.cities.find(c => c.id === event.cityId) || {}).name || '';
+    const dateFormatted = app.formatEventDate(event.createdAt || event.publishedAt);
+
+    let metaX = textStartX;
+    if (cityName) {
+      const cityText = `📍 ${cityName}`;
+      ctx.font = 'bold 18px "Plus Jakarta Sans", system-ui, sans-serif';
+      const cW = ctx.measureText(cityText).width + 28;
+      drawCanvasRoundRect(ctx, metaX, contentY, cW, 36, 18);
+      ctx.fillStyle = 'rgba(25, 25, 25, 0.88)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(166, 166, 166, 0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = '#A6A6A6';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(cityText, metaX + 14, contentY + 18);
+      metaX += cW + 12;
+    }
+
+    if (dateFormatted) {
+      const dateText = `📅 ${dateFormatted}`;
+      ctx.font = 'bold 18px "Plus Jakarta Sans", system-ui, sans-serif';
+      const dW = ctx.measureText(dateText).width + 28;
+      drawCanvasRoundRect(ctx, metaX, contentY, dW, 36, 18);
+      ctx.fillStyle = 'rgba(25, 25, 25, 0.88)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(166, 166, 166, 0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = '#A6A6A6';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(dateText, metaX + 14, contentY + 18);
+      metaX += dW + 12;
+    }
+
+    // 6. Pie de Página Institucional Dfarra
+    const footerY = 572;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padX, footerY);
+    ctx.lineTo(1200 - padX, footerY);
+    ctx.stroke();
+
+    ctx.font = 'bold 17px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✨ Dfarra • Experiencias y Coberturas Exclusivas', padX, footerY + 24);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#B52B32';
+    ctx.fillText('dfarra.web.app', 1200 - padX, footerY + 24);
+
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(new File([blob], `evento-${event.id || 'cobertura'}.jpg`, { type: 'image/jpeg' }));
+        } else {
+          resolve(null);
+        }
+      }, 'image/jpeg', 0.92);
+    });
+  } catch (err) {
+    console.warn('[Dfarra] Error generando tarjeta de evento en canvas:', err);
+    return null;
+  }
+};
+
+// Generar tarjeta promocional visual de una Oferta en Canvas (1200x630 px)
+app.generatePromoCardImage = async function(promo) {
+  if (!promo) return null;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 630;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // 1. Fondo base negro principal #0A0A0A con resplandor rojo Dfarra
+    ctx.fillStyle = '#0A0A0A';
+    ctx.fillRect(0, 0, 1200, 630);
+
+    const rad1 = ctx.createRadialGradient(200, 180, 30, 200, 180, 500);
+    rad1.addColorStop(0, 'rgba(181, 43, 50, 0.25)');
+    rad1.addColorStop(1, 'transparent');
+    ctx.fillStyle = rad1;
+    ctx.fillRect(0, 0, 1200, 630);
+
+    const rad2 = ctx.createRadialGradient(1000, 480, 20, 1000, 480, 450);
+    rad2.addColorStop(0, 'rgba(245, 233, 201, 0.1)');
+    rad2.addColorStop(1, 'transparent');
+    ctx.fillStyle = rad2;
+    ctx.fillRect(0, 0, 1200, 630);
+
+    // 2. Tarjeta contenedora carbón
+    const pad = 36;
+    const cardW = 1200 - pad * 2;
+    const cardH = 630 - pad * 2;
+    drawCanvasRoundRect(ctx, pad, pad, cardW, cardH, 28);
+    ctx.fillStyle = '#191919';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(181, 43, 50, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 3. Cabecera con Logotipo Oficial Dfarra y Badge de Oferta
+    const headerX = pad + 40;
+    const headerY = pad + 40;
+
+    let dfarraLogo = await app.loadCanvasImage('icons/dfarra-logo-horizontal.png');
+    if (dfarraLogo) {
+      const logoH = 44;
+      const logoW = (dfarraLogo.naturalWidth / dfarraLogo.naturalHeight) * logoH || 140;
+      ctx.drawImage(dfarraLogo, headerX, headerY, logoW, logoH);
+    } else {
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.font = '900 34px "Plus Jakarta Sans", system-ui, sans-serif';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText('Dfarra', headerX, headerY);
+    }
+
+    const badgeText = '🔥 ANÚNCIATE HOY POR 7 DÍAS';
+    ctx.font = 'bold 18px "Plus Jakarta Sans", system-ui, sans-serif';
+    const bW = ctx.measureText(badgeText).width + 32;
+    const bH = 42;
+    const bX = pad + cardW - 40 - bW;
+
+    drawCanvasRoundRect(ctx, bX, headerY, bW, bH, 21);
+    ctx.fillStyle = 'rgba(181, 43, 50, 0.2)';
+    ctx.fill();
+    ctx.strokeStyle = '#B52B32';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = '#F5E9C9';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(badgeText, bX + bW / 2, headerY + bH / 2);
+
+    // 4. Contenido de la Oferta
+    let contentY = headerY + 76;
+    const bizName = promo.businessName ? promo.businessName.trim() : '';
+    const cityName = (app.cities.find(c => c.id === promo.cityId) || {}).name || '';
+
+    if (bizName) {
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.font = 'bold 24px "Plus Jakarta Sans", system-ui, sans-serif';
+      ctx.fillStyle = '#F5E9C9';
+      ctx.fillText(`🏬 ${bizName}${cityName ? ' • 📍 ' + cityName : ''}`, headerX, contentY);
+      contentY += 40;
+    }
+
+    // Título de la promoción
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = '900 46px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillStyle = '#FFFFFF';
+    const promoTitle = promo.title || 'Promoción Especial';
+    drawCanvasWrappedText(ctx, promoTitle, headerX, contentY, cardW - 80, 54, 2);
+    contentY += 115;
+
+    // Descripción
+    if (promo.description) {
+      ctx.font = '500 22px "Plus Jakarta Sans", system-ui, sans-serif';
+      ctx.fillStyle = '#A6A6A6';
+      drawCanvasWrappedText(ctx, promo.description, headerX, contentY, cardW - 80, 32, 2);
+    }
+
+    // 5. Botón de acción
+    const btnY = pad + cardH - 110;
+    const btnX = headerX;
+    const btnW = cardW - 80;
+    const btnH = 62;
+
+    drawCanvasRoundRect(ctx, btnX, btnY, btnW, btnH, 31);
+    const btnGrad = ctx.createLinearGradient(btnX, btnY, btnX + btnW, btnY);
+    btnGrad.addColorStop(0, '#B52B32');
+    btnGrad.addColorStop(1, '#982329');
+    ctx.fillStyle = btnGrad;
+    ctx.fill();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '900 22px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.fillText('👉 Descubre esta oferta en https://dfarra.web.app', btnX + btnW / 2, btnY + btnH / 2);
+
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(new File([blob], `oferta-${promo.id || 'promo'}.jpg`, { type: 'image/jpeg' }));
+        } else {
+          resolve(null);
+        }
+      }, 'image/jpeg', 0.92);
+    });
+  } catch (err) {
+    console.warn('[Dfarra] Error generando tarjeta de oferta en canvas:', err);
+    return null;
+  }
+};
+
+// Actualización dinámica de metadatos sociales para Open Graph y Twitter Cards
+app.updateSocialMeta = function(meta) {
+  if (!meta) return;
+  try {
+    if (meta.title) {
+      document.title = meta.title;
+      const ogTitle = document.querySelector('meta[property="og:title"]');
+      if (ogTitle) ogTitle.setAttribute('content', meta.title);
+      const twTitle = document.querySelector('meta[name="twitter:title"]');
+      if (twTitle) twTitle.setAttribute('content', meta.title);
+    }
+    if (meta.description) {
+      const desc = document.querySelector('meta[name="description"]');
+      if (desc) desc.setAttribute('content', meta.description);
+      const ogDesc = document.querySelector('meta[property="og:description"]');
+      if (ogDesc) ogDesc.setAttribute('content', meta.description);
+      const twDesc = document.querySelector('meta[name="twitter:description"]');
+      if (twDesc) twDesc.setAttribute('content', meta.description);
+    }
+    if (meta.image) {
+      const ogImg = document.querySelector('meta[property="og:image"]');
+      if (ogImg) ogImg.setAttribute('content', meta.image);
+      const ogSecImg = document.querySelector('meta[property="og:image:secure_url"]');
+      if (ogSecImg) ogSecImg.setAttribute('content', meta.image);
+      const twImg = document.querySelector('meta[name="twitter:image"]');
+      if (twImg) twImg.setAttribute('content', meta.image);
+    }
+    if (meta.url) {
+      const ogUrl = document.querySelector('meta[property="og:url"]');
+      if (ogUrl) ogUrl.setAttribute('content', meta.url);
+    }
+  } catch(e) {}
+};
+
+app.resetSocialMeta = function() {
+  app.updateSocialMeta({
+    title: 'Dfarra - Tu ciudad, en tus manos',
+    description: 'Descubre las mejores ofertas, comercios locales y coberturas exclusivas de eventos. Tu ciudad, en tus manos. Contacta directo por WhatsApp.',
+    image: 'https://dfarra.web.app/icons/dfarra-app-icon-512.png',
+    url: 'https://dfarra.web.app/'
+  });
+};
+
 // ==========================================================================
 // 8.1 EJECUCIÓN PRINCIPAL DE COMPARTIR (Multi-Plataforma con Fallbacks)
 // ==========================================================================
@@ -1568,7 +2035,7 @@ app.executeShare = async function(titleOrOptions, textParam, urlParam, fileParam
       }
     } catch (err) {
       if (err.name === 'AbortError') return; // Cancelado voluntariamente
-      console.warn('[7D App] Web Share con archivo no admitido, reintentando texto+url:', err);
+      console.warn('[Dfarra] Web Share con archivo no admitido, reintentando texto+url:', err);
     }
   }
 
@@ -1650,6 +2117,10 @@ app.sharePromo = async function(promo) {
     app.showToast('⏳ Preparando imagen de la oferta...');
     const filename = `oferta-${promo.id || 'flyer'}.jpg`;
     imageFile = await app.fetchImageAsFile(promo.imageUrl, filename);
+  }
+  if (!imageFile) {
+    app.showToast('⏳ Preparando tarjeta de la oferta...');
+    imageFile = await app.generatePromoCardImage(promo);
   }
 
   await app.executeShare({
@@ -1797,7 +2268,7 @@ app.handleDeepLink = function() {
       app.showScreen('events');
     }
   } catch (err) {
-    console.warn('[7D App] Error procesando enlace directo:', err);
+    console.warn('[Dfarra] Error procesando enlace directo:', err);
   }
 };
 
@@ -5508,6 +5979,15 @@ app.openBusinessProfile = function(bizId) {
   app.currentProfileBiz = biz;
   app.renderProfileOffers(biz);
   modal.classList.add('active');
+
+  // Metadatos sociales dinámicos Open Graph y Twitter Cards
+  const bizImage = biz.logoUrl || biz.coverUrl || 'https://dfarra.web.app/icons/dfarra-app-icon-512.png';
+  app.updateSocialMeta({
+    title: `${biz.name} | Dfarra`,
+    description: biz.description ? biz.description.slice(0, 150) : `Conoce a ${biz.name} en Dfarra - ${biz.cityName || 'Venezuela'}`,
+    image: bizImage,
+    url: `${window.location.origin}${window.location.pathname}#biz=${biz.id}`
+  });
 };
 
 app.renderProfileOffers = function(biz) {
@@ -5562,6 +6042,7 @@ app.closeBusinessProfileModal = function() {
   if (app.currentScreen !== 'feed' && app.currentScreen !== 'detail') {
     app.stopCountdownTicker();
   }
+  app.resetSocialMeta();
 };
 
 // --------------------------------------------------------------------------
@@ -8191,6 +8672,15 @@ app.openEventDetail = function(eventId) {
     window.location.hash = `event=${event.id}`;
   }
 
+  // Actualización dinámica de metadatos sociales Open Graph y Twitter Cards
+  const primaryCover = event.coverUrl || (validPhotos.length > 0 ? validPhotos[0].url : 'https://dfarra.web.app/icons/dfarra-app-icon-512.png');
+  app.updateSocialMeta({
+    title: `${event.title || 'Cobertura de Evento'} | Dfarra`,
+    description: event.review ? event.review.slice(0, 150) : `Cobertura exclusiva en Dfarra - ${app.getEventCategoryLabel(event.category)}`,
+    image: primaryCover,
+    url: `${window.location.origin}${window.location.pathname}#event=${event.id}`
+  });
+
   app.showScreen('event-detail');
 };
 
@@ -8202,10 +8692,11 @@ app.closeEventDetail = function() {
   } catch(e) {
     window.location.hash = '';
   }
+  app.resetSocialMeta();
   app.showScreen('events');
 };
 
-// Compartir evento con Web Share API y alternativa clipboard
+// Compartir evento con Web Share API (con tarjeta visual hero) y fallbacks
 app.shareEvent = async function(event) {
   if (!event) return;
   const origin = (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://dfarra.web.app';
@@ -8220,36 +8711,15 @@ app.shareEvent = async function(event) {
   }
   text += `\n\n👉 Mira la galería fotográfica completa aquí:\n${url}`;
 
-  // 1. Web Share API si está disponible en el dispositivo
-  if (navigator.share) {
-    try {
-      await navigator.share({
-        title,
-        text,
-        url
-      });
-      return;
-    } catch (err) {
-      if (err.name === 'AbortError') return; // Cancelado voluntariamente
-      console.warn('[Dfarra] Falló Web Share, usando fallback:', err);
-    }
-  }
+  app.showToast('⏳ Preparando tarjeta del evento...');
+  const cardFile = await app.generateEventCardImage(event);
 
-  // 2. Alternativa segura mediante copia del enlace al portapapeles
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    try {
-      await navigator.clipboard.writeText(url);
-      app.showToast('📋 ¡Enlace del evento copiado al portapapeles!');
-      return;
-    } catch (err) {
-      console.warn('[7D App] Falló portapapeles:', err);
-    }
-  }
-
-  // Fallback estándar
-  try {
-    window.prompt('Copia este enlace para compartir el evento:', url);
-  } catch(e) {}
+  await app.executeShare({
+    title,
+    text,
+    url,
+    file: cardFile
+  });
 };
 
 app.shareCurrentEvent = function() {
