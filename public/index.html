@@ -382,12 +382,12 @@
               <div class="form-row">
                 <div class="form-group flex-1">
                   <label>Logotipo del Comercio *</label>
-                  <input type="file" id="reg-biz-logo-input" accept="image/*" style="display: none;" onchange="app.handleLogoSelect(event)">
+                  <input type="file" id="reg-biz-logo-input" accept="image/jpeg,image/png,image/webp" style="display: none;" onchange="app.handleLogoSelect(event)">
                   <div class="upload-field-container">
                     <div id="reg-logo-placeholder" class="upload-dropzone-box" onclick="app.triggerLogoSelect()">
                       <span class="upload-dropzone-icon">📷</span>
                       <span class="upload-dropzone-label">Seleccionar Logotipo</span>
-                      <span class="upload-dropzone-sub">Formato cuadrado recomendado</span>
+                      <span class="upload-dropzone-sub">Formato cuadrado recomendado (JPG, PNG, WebP)</span>
                     </div>
                     <div id="reg-logo-preview-box" class="upload-preview-card upload-logo-card" style="display: none;">
                       <div class="upload-thumb-wrap logo-thumb-wrap">
@@ -407,12 +407,12 @@
 
                 <div class="form-group flex-1">
                   <label>Portada o Fachada (Opcional)</label>
-                  <input type="file" id="reg-biz-cover-input" accept="image/*" style="display: none;" onchange="app.handleCoverSelect(event)">
+                  <input type="file" id="reg-biz-cover-input" accept="image/jpeg,image/png,image/webp" style="display: none;" onchange="app.handleCoverSelect(event)">
                   <div class="upload-field-container">
                     <div id="reg-cover-placeholder" class="upload-dropzone-box" onclick="app.triggerCoverSelect()">
                       <span class="upload-dropzone-icon">🖼️</span>
                       <span class="upload-dropzone-label">Seleccionar Portada</span>
-                      <span class="upload-dropzone-sub">Panorámica recomendada</span>
+                      <span class="upload-dropzone-sub">Panorámica recomendada (JPG, PNG, WebP)</span>
                     </div>
                     <div id="reg-cover-preview-box" class="upload-preview-card upload-cover-card" style="display: none;">
                       <div class="upload-thumb-wrap cover-thumb-wrap">
@@ -1620,12 +1620,12 @@
           <div class="form-row">
             <div class="form-group flex-1">
               <label>Logotipo del Comercio</label>
-              <input type="file" id="edit-biz-logo-input" accept="image/*" style="display: none;" onchange="app.handleEditLogoSelect(event)">
+              <input type="file" id="edit-biz-logo-input" accept="image/jpeg,image/png,image/webp" style="display: none;" onchange="app.handleEditLogoSelect(event)">
               <div class="upload-field-container">
                 <div id="edit-logo-placeholder" class="upload-dropzone-box" onclick="app.triggerEditLogoSelect()">
                   <span class="upload-dropzone-icon">📷</span>
                   <span class="upload-dropzone-label">Seleccionar Logotipo</span>
-                  <span class="upload-dropzone-sub">Formato cuadrado</span>
+                  <span class="upload-dropzone-sub">Formato cuadrado (JPG, PNG, WebP)</span>
                 </div>
                 <div id="edit-logo-preview-box" class="upload-preview-card upload-logo-card" style="display: none;">
                   <div class="upload-thumb-wrap logo-thumb-wrap">
@@ -1645,12 +1645,12 @@
 
             <div class="form-group flex-1">
               <label>Portada o Fachada</label>
-              <input type="file" id="edit-biz-cover-input" accept="image/*" style="display: none;" onchange="app.handleEditCoverSelect(event)">
+              <input type="file" id="edit-biz-cover-input" accept="image/jpeg,image/png,image/webp" style="display: none;" onchange="app.handleEditCoverSelect(event)">
               <div class="upload-field-container">
                 <div id="edit-cover-placeholder" class="upload-dropzone-box" onclick="app.triggerEditCoverSelect()">
                   <span class="upload-dropzone-icon">🖼️</span>
                   <span class="upload-dropzone-label">Seleccionar Portada</span>
-                  <span class="upload-dropzone-sub">Panorámica recomendada</span>
+                  <span class="upload-dropzone-sub">Panorámica recomendada (JPG, PNG, WebP)</span>
                 </div>
                 <div id="edit-cover-preview-box" class="upload-preview-card upload-cover-card" style="display: none;">
                   <div class="upload-thumb-wrap cover-thumb-wrap">

@@ -847,8 +847,10 @@ app.createPromoCardElement = function(promo, now = Date.now()) {
   const linkedBiz = app.getApprovedBusinessForPromo(promo);
 
   const bizName = (linkedBiz && linkedBiz.name) || promo.businessName || 'Comercio Local';
-  const bizLogoHtml = linkedBiz && linkedBiz.logoUrl
-    ? `<img class="promo-card-biz-logo" src="${linkedBiz.logoUrl}" alt="${bizName}">`
+  const safeBizName = String(bizName).replace(/"/g, '&quot;');
+  const safeBizLogo = linkedBiz && linkedBiz.logoUrl ? app.sanitizeImageUrl(linkedBiz.logoUrl) : '';
+  const bizLogoHtml = safeBizLogo
+    ? `<img class="promo-card-biz-logo" src="${safeBizLogo}" alt="${safeBizName}" loading="lazy" onerror="this.style.display='none';">`
     : `<span style="font-size: 14px;">⭐</span>`;
 
   const storeBtnHtml = linkedBiz
@@ -2617,46 +2619,160 @@ app.setPublishCategory = function(catId) {
   }
 };
 
-function convertImageToWebP(file) {
+// ============================================================================
+// DFARRA — MOTOR DE PROCESAMIENTO Y SUBIDA DE IMÁGENES A CLOUDFLARE R2
+// ============================================================================
+
+const BIZ_IMAGE_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB límite estricto
+const BIZ_LOGO_MAX_DIMENSION = 400;                     // 400x400 píxeles máx para logotipos
+const BIZ_COVER_MAX_DIMENSION = 1280;                   // 1280px máx en lado mayor para portadas
+const BIZ_IMAGE_WEBP_QUALITY = 0.82;                    // Calidad WebP entre 0.80 y 0.85
+const BIZ_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const BIZ_IMAGE_TIMEOUT_MS = 35000;                     // 35 segundos límite de red para subidas a R2
+
+/**
+ * Valida formato y tamaño del archivo original.
+ * Acepta únicamente JPEG, PNG y WebP con un límite estricto de 10 MB.
+ */
+function validateBusinessImageFile(file, label = 'La imagen') {
+  if (!file) {
+    return { valid: false, error: `${label} no es válida o no fue proporcionada.` };
+  }
+
+  const fileType = (file.type || '').toLowerCase();
+  const fileName = (file.name || '').toLowerCase();
+  const hasValidExt = /\.(jpe?g|png|webp)$/i.test(fileName);
+  const isAllowedMime = BIZ_IMAGE_ALLOWED_MIME_TYPES.includes(fileType);
+
+  if (!isAllowedMime && !hasValidExt) {
+    return {
+      valid: false,
+      error: `Formato no compatible (${fileType || fileName || 'desconocido'}). Solo se admiten imágenes en formato JPEG, PNG o WebP.`
+    };
+  }
+
+  if (file.size > BIZ_IMAGE_MAX_FILE_SIZE_BYTES) {
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    return {
+      valid: false,
+      error: `${label} supera el límite máximo de 10 MB (peso detectado: ${sizeMB} MB). Por favor selecciona un archivo más ligero.`
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Función única y reutilizable para validar, redimensionar y convertir imágenes a WebP.
+ * - Valida que no supere 10 MB y formatos admitidos (JPEG, PNG, WebP).
+ * - Para logotipos: limita dimensiones a máx 400x400px.
+ * - Para portadas: limita el lado mayor a 1280px, conservando proporción.
+ * - Utiliza calidad WebP entre 0.80 y 0.85 (0.82 por defecto).
+ * - Libera explícitamente ObjectURL y Canvas (width=0, height=0).
+ */
+function processImageToWebP(file, options = {}) {
   return new Promise((resolve, reject) => {
+    const label = options.label || 'La imagen';
+    const validation = validateBusinessImageFile(file, label);
+    if (!validation.valid) {
+      reject(new Error(validation.error));
+      return;
+    }
+
+    const maxDimension = options.maxDimension || (options.isLogo ? BIZ_LOGO_MAX_DIMENSION : BIZ_COVER_MAX_DIMENSION);
+    const quality = (typeof options.quality === 'number' && options.quality >= 0.80 && options.quality <= 0.85)
+      ? options.quality
+      : BIZ_IMAGE_WEBP_QUALITY;
+
     const objectUrl = URL.createObjectURL(file);
     const img = new Image();
 
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      try {
+        const origWidth = img.naturalWidth || img.width;
+        const origHeight = img.naturalHeight || img.height;
 
-      const ctx = canvas.getContext('2d');
-
-      if (!ctx) {
-        URL.revokeObjectURL(objectUrl);
-        reject(new Error('No se pudo preparar la imagen.'));
-        return;
-      }
-
-      ctx.drawImage(img, 0, 0);
-
-      canvas.toBlob((blob) => {
-        URL.revokeObjectURL(objectUrl);
-
-        if (!blob) {
-          reject(new Error('No se pudo convertir el flyer a WebP.'));
+        if (!origWidth || !origHeight) {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error(`No se pudieron determinar las dimensiones de ${label.toLowerCase()}.`));
           return;
         }
 
-        resolve(blob);
-      }, 'image/webp', 0.85);
+        let targetWidth = origWidth;
+        let targetHeight = origHeight;
+        const longestSide = Math.max(origWidth, origHeight);
+
+        if (longestSide > maxDimension) {
+          const ratio = maxDimension / longestSide;
+          targetWidth = Math.max(1, Math.round(origWidth * ratio));
+          targetHeight = Math.max(1, Math.round(origHeight * ratio));
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          canvas.width = 0;
+          canvas.height = 0;
+          reject(new Error('No se pudo inicializar el procesador gráfico en el navegador.'));
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+        canvas.toBlob((blob) => {
+          // Liberación estricta de memoria temporal
+          URL.revokeObjectURL(objectUrl);
+          canvas.width = 0;
+          canvas.height = 0;
+
+          if (!blob) {
+            reject(new Error(`Fallo al generar el archivo WebP optimizado para ${label.toLowerCase()}.`));
+            return;
+          }
+
+          resolve({
+            blob,
+            width: targetWidth,
+            height: targetHeight,
+            size: blob.size,
+            originalSize: file.size,
+            mimeType: 'image/webp'
+          });
+        }, 'image/webp', quality);
+      } catch (err) {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error(`Error al procesar ${label.toLowerCase()}: ${err.message}`));
+      }
     };
 
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error('No se pudo leer la imagen seleccionada.'));
+      reject(new Error(`No se pudo decodificar ${label.toLowerCase()}. Verifica que el archivo no esté dañado o en un formato no compatible (como HEIC/RAW).`));
     };
 
     img.src = objectUrl;
   });
 }
+
+/**
+ * Función compatible para convertir imagen a WebP blob.
+ */
+async function convertImageToWebP(file, options = {}) {
+  const res = await processImageToWebP(file, {
+    maxDimension: 1920,
+    quality: BIZ_IMAGE_WEBP_QUALITY,
+    label: 'La imagen',
+    ...options
+  });
+  return res.blob;
+}
+
 app.handleImageUpload = function(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -2704,24 +2820,109 @@ app.handleImageUpload = function(event) {
 // Alias para compatibilidad
 app.handleImageSelect = app.handleImageUpload;
 
-async function uploadFlyerToR2(file) {
-  const webpBlob = await convertImageToWebP(file);
+/**
+ * Sube una imagen a Cloudflare R2 con:
+ * 1. Optimización, redimensionamiento y conversión a WebP.
+ * 2. AbortController con tiempo límite razonable (35s).
+ * 3. Comprobación de respuesta HTTP, JSON del Worker y validación de URL HTTP(S).
+ */
+async function uploadImageToR2(file, options = {}, onProgress = null) {
+  const label = options.label || 'la imagen';
+  const tag = options.tag || 'media';
 
-  const formData = new FormData();
-  formData.append('file', webpBlob, 'flyer.webp');
-
-  const response = await fetch(R2_UPLOAD_URL, {
-    method: 'POST',
-    body: formData
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok || !data.ok || !data.url) {
-    throw new Error(data.error || 'No se pudo subir el flyer a R2.');
+  if (typeof onProgress === 'function') {
+    onProgress(`Optimizando ${label.toLowerCase()} (WebP)...`);
   }
 
-  return data.url;
+  // 1. Proceso de optimización
+  const processed = await processImageToWebP(file, options);
+
+  // 2. Preparación de FormData con nombre identificativo y seguro
+  const safeBaseName = (file.name || tag).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30);
+  const uploadFileName = `${tag}_${safeBaseName}_${Date.now()}.webp`;
+
+  const formData = new FormData();
+  formData.append('file', processed.blob, uploadFileName);
+
+  if (typeof onProgress === 'function') {
+    onProgress(`Subiendo ${label.toLowerCase()} a Cloudflare R2...`);
+  }
+
+  // 3. Petición con AbortController y tiempo límite razonable
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs || BIZ_IMAGE_TIMEOUT_MS;
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(R2_UPLOAD_URL, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal
+    });
+  } catch (netErr) {
+    clearTimeout(timer);
+    if (netErr.name === 'AbortError') {
+      throw new Error(`Se agotó el tiempo de espera al subir ${label.toLowerCase()} a Cloudflare R2 (${Math.round(timeoutMs / 1000)}s). Verifica tu conexión a internet e inténtalo nuevamente.`);
+    }
+    throw new Error(`Error de conexión con Cloudflare R2 al subir ${label.toLowerCase()}: ${netErr.message || 'Fallo de red.'}`);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // 4. Verificación de respuesta HTTP
+  if (!response.ok) {
+    let errDetail = '';
+    try {
+      const errJson = await response.json();
+      errDetail = errJson.error || errJson.message || '';
+    } catch (_) {
+      errDetail = await response.text().catch(() => '');
+    }
+    throw new Error(`Cloudflare R2 rechazó la subida (HTTP ${response.status}): ${errDetail || 'Error desconocido del servidor.'}`);
+  }
+
+  // 5. Verificación de formato JSON del Worker
+  let data;
+  try {
+    data = await response.json();
+  } catch (jsonErr) {
+    throw new Error('La respuesta de Cloudflare R2 no tiene un formato JSON válido.');
+  }
+
+  if (!data || !data.ok || !data.url) {
+    throw new Error((data && data.error) ? data.error : `Cloudflare R2 no devolvió una URL válida para ${label.toLowerCase()}.`);
+  }
+
+  // 6. Comprobación estricta de que la URL devuelta sea HTTP o HTTPS válida
+  const rawUrl = String(data.url).trim();
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawUrl);
+  } catch (_) {
+    throw new Error(`La URL devuelta por Cloudflare R2 no es válida: "${rawUrl}"`);
+  }
+
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new Error(`Protocolo inválido devuelto por Cloudflare R2: "${parsedUrl.protocol}"`);
+  }
+
+  return rawUrl;
+}
+
+/**
+ * Función wrapper compatible para flyers y otros módulos.
+ */
+async function uploadFlyerToR2(file, options = {}, onProgress = null) {
+  return uploadImageToR2(file, {
+    label: 'El flyer',
+    tag: 'flyer',
+    maxDimension: 1920,
+    quality: BIZ_IMAGE_WEBP_QUALITY,
+    ...options
+  }, onProgress);
 }
 
 // ============================================================================
@@ -5273,12 +5474,51 @@ app.runDatabaseCommunicationTest = async function() {
 // ETAPA B: DIRECTORIO COMERCIAL, NAVEGACIÓN INFERIOR Y AUTOCOMPLETADO
 // ==========================================================================
 
-// Generadores de imágenes SVG vectoriales y locales para comercios de prueba
-const makeSvgLogo = (emoji, bg1, bg2) => 
-  `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="${encodeURIComponent(bg1)}"/><stop offset="100%" stop-color="${encodeURIComponent(bg2)}"/></linearGradient></defs><rect width="120" height="120" rx="24" fill="url(%23g)"/><text x="50%" y="54%" font-size="52" text-anchor="middle" dominant-baseline="middle">${emoji}</text></svg>`;
+// Sanitizador robusto de URLs de imágenes para evitar roturas de marcado HTML por comillas o caracteres especiales
+app.sanitizeImageUrl = function(url) {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
 
-const makeSvgCover = (title, bg1, bg2) =>
-  `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="240" viewBox="0 0 800 240"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="${encodeURIComponent(bg1)}"/><stop offset="100%" stop-color="${encodeURIComponent(bg2)}"/></linearGradient></defs><rect width="800" height="240" fill="url(%23g)"/><circle cx="700" cy="40" r="140" fill="rgba(255,255,255,0.06)"/><circle cx="100" cy="200" r="100" fill="rgba(255,255,255,0.04)"/><text x="50%" y="52%" font-family="system-ui,-apple-system,sans-serif" font-weight="900" font-size="28" fill="%23FFFFFF" text-anchor="middle" opacity="0.92">${encodeURIComponent(title)}</text></svg>`;
+  // Si es un SVG data URL con XML sin codificar (contiene comillas o < que rompen atributos HTML)
+  if (trimmed.startsWith('data:image/svg+xml')) {
+    if (trimmed.includes('<svg') || trimmed.includes('"') || trimmed.includes('\'')) {
+      const commaIdx = trimmed.indexOf(',');
+      if (commaIdx !== -1) {
+        const meta = trimmed.substring(0, commaIdx);
+        const body = trimmed.substring(commaIdx + 1);
+        if (!meta.includes('base64')) {
+          try {
+            const cleanBody = decodeURIComponent(body.replace(/%23/g, '#'));
+            return 'data:image/svg+xml;utf8,' + encodeURIComponent(cleanBody);
+          } catch (_) {
+            return 'data:image/svg+xml;utf8,' + encodeURIComponent(body);
+          }
+        }
+      }
+    }
+  }
+
+  // En URLs convencionales, escapar comillas dobles para que nunca rompan atributos src o style
+  return trimmed.replace(/"/g, '&quot;');
+};
+
+// Generadores de imágenes SVG vectoriales y locales para comercios de prueba
+const makeSvgLogo = (emoji, bg1, bg2) => {
+  const safeEmoji = emoji || '🏪';
+  const c1 = bg1 || '#191919';
+  const c2 = bg2 || '#242424';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient></defs><rect width="120" height="120" rx="24" fill="url(#g)"/><text x="50%" y="54%" font-size="52" text-anchor="middle" dominant-baseline="middle">${safeEmoji}</text></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+};
+
+const makeSvgCover = (title, bg1, bg2) => {
+  const safeTitle = (title || 'Dfarra').replace(/[<>&"]/g, '');
+  const c1 = bg1 || '#191919';
+  const c2 = bg2 || '#242424';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="240" viewBox="0 0 800 240"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient></defs><rect width="800" height="240" fill="url(#g)"/><circle cx="700" cy="40" r="140" fill="rgba(255,255,255,0.06)"/><circle cx="100" cy="200" r="100" fill="rgba(255,255,255,0.04)"/><text x="50%" y="52%" font-family="system-ui,-apple-system,sans-serif" font-weight="900" font-size="28" fill="#FFFFFF" text-anchor="middle" opacity="0.92">${safeTitle}</text></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+};
 
 // Semilla de comercios representativos para prueba interactiva de la interfaz
 const INITIAL_SEED_BUSINESSES = [
@@ -5684,28 +5924,38 @@ app.renderDirectory = function() {
     const typeLabel = biz.businessType === 'physical' ? '🏬 Tienda Física' :
                       biz.businessType === 'virtual' ? '🌐 Tienda Virtual' : '🏬 & 🌐 Física y Virtual';
 
-    const bannerBg = biz.coverUrl 
-      ? `background-image: url('${biz.coverUrl}');` 
-      : `background: linear-gradient(135deg, #1E1B4B, #311042);`;
+    const safeName = (biz.name || 'Comercio').replace(/"/g, '&quot;');
+    const safeCity = (biz.cityName || cityName || '').replace(/"/g, '&quot;');
+    const safeCat = (biz.categoryName || 'Comercio').replace(/"/g, '&quot;');
+    const safeCatIcon = (biz.categoryIcon || '🏷️');
+    const safeDesc = (biz.description || 'Comercio verificado en Dfarra.').replace(/"/g, '&quot;');
+    const safeCoverUrl = app.sanitizeImageUrl(biz.coverUrl);
+    const safeLogoUrl = app.sanitizeImageUrl(biz.logoUrl);
 
-    const logoHtml = biz.logoUrl
-      ? `<img src="${biz.logoUrl}" class="business-logo-thumb" alt="${biz.name}">`
-      : `<div class="business-logo-thumb" style="display:flex;align-items:center;justify-content:center;font-size:24px;">🏪</div>`;
+    const bannerHtml = safeCoverUrl
+      ? `<div class="business-card-banner"><img src="${safeCoverUrl}" class="business-card-banner-img" alt="Portada de ${safeName}" loading="lazy" onerror="this.style.display='none';"></div>`
+      : `<div class="business-card-banner"></div>`;
+
+    const logoHtml = safeLogoUrl
+      ? `<img src="${safeLogoUrl}" class="business-logo-thumb" alt="${safeName}" loading="lazy" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'business-logo-thumb business-logo-fallback\\'>🏪</div>';">`
+      : `<div class="business-logo-thumb business-logo-fallback" style="display:flex;align-items:center;justify-content:center;font-size:24px;">🏪</div>`;
 
     card.innerHTML = `
-      <div class="business-card-banner" style="${bannerBg}"></div>
+      ${bannerHtml}
       <div class="business-card-main">
         <div class="business-card-avatar-row">
-          ${logoHtml}
+          <div class="business-card-avatar-wrap">
+            ${logoHtml}
+          </div>
           <span class="business-type-badge">${typeLabel}</span>
         </div>
-        <h3 class="business-card-title">${biz.name}</h3>
+        <h3 class="business-card-title">${safeName}</h3>
         <div class="business-card-meta">
-          <span class="business-meta-tag">${biz.categoryIcon || '🏷️'} ${biz.categoryName || 'Comercio'}</span>
+          <span class="business-meta-tag">${safeCatIcon} ${safeCat}</span>
           <span class="business-meta-tag">•</span>
-          <span class="business-meta-tag">📍 ${biz.cityName || cityName}</span>
+          <span class="business-meta-tag">📍 ${safeCity}</span>
         </div>
-        <p class="business-desc-clamp">${biz.description || 'Comercio verificado en Dfarra.'}</p>
+        <p class="business-desc-clamp">${safeDesc}</p>
         <div class="business-card-footer">
           <span class="delivery-indicator">${biz.hasDelivery ? '🛵 Delivery disponible' : '🏬 Retiro en local'}</span>
           <div style="display: flex; align-items: center; gap: 8px;">
@@ -5862,9 +6112,14 @@ app.openBusinessProfile = function(bizId) {
 
   const coverImg = document.getElementById('profile-cover-img');
   const coverFallback = document.getElementById('profile-cover-fallback');
-  if (biz.coverUrl && coverImg) {
-    coverImg.src = biz.coverUrl;
+  const safeProfileCover = app.sanitizeImageUrl(biz.coverUrl);
+  if (safeProfileCover && coverImg) {
+    coverImg.src = safeProfileCover;
     coverImg.style.display = 'block';
+    coverImg.onerror = () => {
+      coverImg.style.display = 'none';
+      if (coverFallback) coverFallback.style.display = 'block';
+    };
     if (coverFallback) coverFallback.style.display = 'none';
   } else {
     if (coverImg) coverImg.style.display = 'none';
@@ -5873,7 +6128,11 @@ app.openBusinessProfile = function(bizId) {
 
   const logoImg = document.getElementById('profile-logo-img');
   if (logoImg) {
-    logoImg.src = biz.logoUrl || makeSvgLogo('🏪', '#1E1B4B', '#311042');
+    const safeProfileLogo = app.sanitizeImageUrl(biz.logoUrl);
+    logoImg.src = safeProfileLogo || makeSvgLogo('🏪', '#191919', '#242424');
+    logoImg.onerror = () => {
+      logoImg.src = makeSvgLogo('🏪', '#191919', '#242424');
+    };
   }
 
   const descEl = document.getElementById('profile-description');
@@ -6139,7 +6398,29 @@ app.triggerCoverSelect = function() {
 app.handleLogoSelect = function(event) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
+
+  const errBox = document.getElementById('reg-biz-error');
+  const validation = validateBusinessImageFile(file, 'El logotipo');
+  if (!validation.valid) {
+    if (errBox) {
+      errBox.textContent = validation.error;
+      errBox.style.display = 'block';
+    } else {
+      alert(validation.error);
+    }
+    event.target.value = '';
+    app.tempBizLogoFile = null;
+    app.tempBizLogo = null;
+    const box = document.getElementById('reg-logo-preview-box');
+    const ph = document.getElementById('reg-logo-placeholder');
+    if (box) box.style.display = 'none';
+    if (ph) ph.style.display = 'flex';
+    return;
+  }
+
+  if (errBox) errBox.style.display = 'none';
   app.tempBizLogoFile = file;
+
   const reader = new FileReader();
   reader.onload = function(e) {
     app.tempBizLogo = e.target.result;
@@ -6169,7 +6450,29 @@ app.removeLogo = function() {
 app.handleCoverSelect = function(event) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
+
+  const errBox = document.getElementById('reg-biz-error');
+  const validation = validateBusinessImageFile(file, 'La portada');
+  if (!validation.valid) {
+    if (errBox) {
+      errBox.textContent = validation.error;
+      errBox.style.display = 'block';
+    } else {
+      alert(validation.error);
+    }
+    event.target.value = '';
+    app.tempBizCoverFile = null;
+    app.tempBizCover = null;
+    const box = document.getElementById('reg-cover-preview-box');
+    const ph = document.getElementById('reg-cover-placeholder');
+    if (box) box.style.display = 'none';
+    if (ph) ph.style.display = 'flex';
+    return;
+  }
+
+  if (errBox) errBox.style.display = 'none';
   app.tempBizCoverFile = file;
+
   const reader = new FileReader();
   reader.onload = function(e) {
     app.tempBizCover = e.target.result;
@@ -6275,24 +6578,34 @@ app.handleRegisterBusinessSubmit = async function(event) {
   let logoUrl = '';
   let coverUrl = '';
 
-  // 1. Subida a Cloudflare R2 reutilizando el mecanismo oficial de imágenes
+  // 1. Subida a Cloudflare R2 con validación estricta, optimización WebP y verificación de URL
   try {
     if (app.tempBizLogoFile) {
-      if (btnSubmit) btnSubmit.textContent = 'Subiendo logotipo a R2...';
-      logoUrl = await uploadFlyerToR2(app.tempBizLogoFile);
-    } else if (app.tempBizLogo) {
-      logoUrl = app.tempBizLogo;
+      logoUrl = await uploadImageToR2(app.tempBizLogoFile, {
+        label: 'Logotipo',
+        tag: 'biz_logo',
+        isLogo: true,
+        maxDimension: BIZ_LOGO_MAX_DIMENSION,
+        quality: BIZ_IMAGE_WEBP_QUALITY
+      }, (status) => {
+        if (btnSubmit) btnSubmit.textContent = status;
+      });
     } else {
-      logoUrl = makeSvgLogo('🏪', '#1E1B4B', '#311042');
+      logoUrl = ''; // Nunca guardar Data URLs, SVG ni Base64 en Firestore
     }
 
     if (app.tempBizCoverFile) {
-      if (btnSubmit) btnSubmit.textContent = 'Subiendo portada a R2...';
-      coverUrl = await uploadFlyerToR2(app.tempBizCoverFile);
-    } else if (app.tempBizCover) {
-      coverUrl = app.tempBizCover;
+      coverUrl = await uploadImageToR2(app.tempBizCoverFile, {
+        label: 'Portada',
+        tag: 'biz_cover',
+        isLogo: false,
+        maxDimension: BIZ_COVER_MAX_DIMENSION,
+        quality: BIZ_IMAGE_WEBP_QUALITY
+      }, (status) => {
+        if (btnSubmit) btnSubmit.textContent = status;
+      });
     } else {
-      coverUrl = makeSvgCover(name, '#1E1B4B', '#311042');
+      coverUrl = ''; // Nunca guardar Data URLs, SVG ni Base64 en Firestore
     }
   } catch (uploadErr) {
     console.error('[R2] Error al subir imágenes del comercio:', uploadErr);
@@ -6523,15 +6836,20 @@ app.handlePublishNameInput = function(query) {
     item.className = 'autocomplete-item';
     item.onclick = () => app.linkBusinessToPromotion(biz.id);
 
-    const logoHtml = biz.logoUrl
-      ? `<img src="${biz.logoUrl}" class="autocomplete-logo" alt="${biz.name}">`
+    const safeLogoUrl = app.sanitizeImageUrl(biz.logoUrl);
+    const safeName = (biz.name || 'Comercio').replace(/"/g, '&quot;');
+    const safeCat = (biz.categoryName || 'Comercio').replace(/"/g, '&quot;');
+    const safeCity = (biz.cityName || '').replace(/"/g, '&quot;');
+
+    const logoHtml = safeLogoUrl
+      ? `<img src="${safeLogoUrl}" class="autocomplete-logo" alt="${safeName}" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'autocomplete-logo\\' style=\\'display:flex;align-items:center;justify-content:center;\\'>🏪</div>';">`
       : `<div class="autocomplete-logo" style="display:flex;align-items:center;justify-content:center;">${biz.categoryIcon || '🏪'}</div>`;
 
     item.innerHTML = `
       ${logoHtml}
       <div class="autocomplete-info">
-        <div class="autocomplete-name">${biz.name}</div>
-        <div class="autocomplete-cat">${biz.categoryIcon || ''} ${biz.categoryName} • 📍 ${biz.cityName}</div>
+        <div class="autocomplete-name">${safeName}</div>
+        <div class="autocomplete-cat">${biz.categoryIcon || ''} ${safeCat} • 📍 ${safeCity}</div>
       </div>
     `;
     dropdown.appendChild(item);
@@ -6647,15 +6965,26 @@ app.renderAdminDirectory = function() {
       statusBadge = '<span class="badge badge-danger">Rechazado</span>';
     }
 
-    const coverHtml = biz.coverUrl
-      ? `<div class="admin-biz-cover-wrap"><img src="${biz.coverUrl}" class="admin-biz-cover-img" alt="Portada de ${biz.name}"></div>`
+    const safeCoverUrl = app.sanitizeImageUrl(biz.coverUrl);
+    const safeLogoUrl = app.sanitizeImageUrl(biz.logoUrl);
+    const safeName = (biz.name || 'Comercio').replace(/"/g, '&quot;');
+    const safeCity = (biz.cityName || '').replace(/"/g, '&quot;');
+    const safeCat = (biz.categoryName || 'Comercio').replace(/"/g, '&quot;');
+    const safeCatIcon = biz.categoryIcon || '🏷️';
+    const safeType = biz.businessType === 'physical' ? '🏬 Local' : biz.businessType === 'virtual' ? '🌐 Virtual' : '🏬 & 🌐 Ambos';
+
+    const coverHtml = safeCoverUrl
+      ? `<div class="admin-biz-cover-wrap"><img src="${safeCoverUrl}" class="admin-biz-cover-img" alt="Portada de ${safeName}" loading="lazy" onerror="this.onerror=null; this.parentElement.style.display='none';"></div>`
       : '';
 
-    const logoHtml = biz.logoUrl
-      ? `<img src="${biz.logoUrl}" class="admin-biz-logo-img" alt="${biz.name}">`
+    const logoHtml = safeLogoUrl
+      ? `<img src="${safeLogoUrl}" class="admin-biz-logo-img" alt="${safeName}" loading="lazy" onerror="this.onerror=null; this.parentElement.innerHTML='<span style=\\'font-size: 26px;\\'>🏪</span>';">`
       : `<span style="font-size: 26px;">🏪</span>`;
 
     const rep = biz.representative || { name: 'No disponible', phone: 'N/A', email: 'N/A' };
+    const safeRepName = (rep.name || 'No disponible').replace(/"/g, '&quot;');
+    const safeRepPhone = (rep.phone || 'N/A').replace(/"/g, '&quot;');
+    const safeRepEmail = (rep.email || 'N/A').replace(/"/g, '&quot;');
 
     card.innerHTML = `
       ${coverHtml}
@@ -6665,13 +6994,13 @@ app.renderAdminDirectory = function() {
             ${logoHtml}
           </div>
           <div class="admin-biz-title-info">
-            <div class="admin-biz-name">${biz.name}</div>
+            <div class="admin-biz-name">${safeName}</div>
             <div class="admin-biz-meta">
-              <span>${biz.categoryIcon || '🏷️'} ${biz.categoryName}</span>
+              <span>${safeCatIcon} ${safeCat}</span>
               <span>•</span>
-              <span>📍 ${biz.cityName}</span>
+              <span>📍 ${safeCity}</span>
               <span>•</span>
-              <span>${biz.businessType === 'physical' ? '🏬 Local' : biz.businessType === 'virtual' ? '🌐 Virtual' : '🏬 & 🌐 Ambos'}</span>
+              <span>${safeType}</span>
             </div>
           </div>
         </div>
@@ -6679,9 +7008,9 @@ app.renderAdminDirectory = function() {
       </div>
 
       <div class="admin-biz-rep-bar">
-        <span>👤 <strong>Representante:</strong> ${rep.name}</span>
-        <span>📞 <strong>Tel:</strong> ${rep.phone}</span>
-        <span>✉️ <strong>Email:</strong> ${rep.email}</span>
+        <span>👤 <strong>Representante:</strong> ${safeRepName}</span>
+        <span>📞 <strong>Tel:</strong> ${safeRepPhone}</span>
+        <span>✉️ <strong>Email:</strong> ${safeRepEmail}</span>
       </div>
 
       <div class="admin-biz-actions">
@@ -6989,7 +7318,7 @@ app.openAdminEditBusinessModal = function(bizId) {
   const logoPh = document.getElementById('edit-logo-placeholder');
   const logoPrevImg = document.getElementById('edit-logo-preview');
   if (app.editBizLogoCurrent && logoPrevImg && logoPrevBox && logoPh) {
-    logoPrevImg.src = app.editBizLogoCurrent;
+    logoPrevImg.src = app.sanitizeImageUrl(app.editBizLogoCurrent);
     logoPrevBox.style.display = 'flex';
     logoPh.style.display = 'none';
   } else {
@@ -7004,7 +7333,7 @@ app.openAdminEditBusinessModal = function(bizId) {
   const coverPh = document.getElementById('edit-cover-placeholder');
   const coverPrevImg = document.getElementById('edit-cover-preview');
   if (app.editBizCoverCurrent && coverPrevImg && coverPrevBox && coverPh) {
-    coverPrevImg.src = app.editBizCoverCurrent;
+    coverPrevImg.src = app.sanitizeImageUrl(app.editBizCoverCurrent);
     coverPrevBox.style.display = 'flex';
     coverPh.style.display = 'none';
   } else {
@@ -7041,7 +7370,24 @@ app.triggerEditLogoSelect = function() {
 app.handleEditLogoSelect = function(event) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
+
+  const errBox = document.getElementById('edit-biz-error');
+  const validation = validateBusinessImageFile(file, 'El logotipo');
+  if (!validation.valid) {
+    if (errBox) {
+      errBox.textContent = validation.error;
+      errBox.style.display = 'block';
+    } else {
+      alert(validation.error);
+    }
+    event.target.value = '';
+    app.editBizLogoFile = null;
+    return;
+  }
+
+  if (errBox) errBox.style.display = 'none';
   app.editBizLogoFile = file;
+
   const reader = new FileReader();
   reader.onload = function(e) {
     const prev = document.getElementById('edit-logo-preview');
@@ -7075,7 +7421,24 @@ app.triggerEditCoverSelect = function() {
 app.handleEditCoverSelect = function(event) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
+
+  const errBox = document.getElementById('edit-biz-error');
+  const validation = validateBusinessImageFile(file, 'La portada');
+  if (!validation.valid) {
+    if (errBox) {
+      errBox.textContent = validation.error;
+      errBox.style.display = 'block';
+    } else {
+      alert(validation.error);
+    }
+    event.target.value = '';
+    app.editBizCoverFile = null;
+    return;
+  }
+
+  if (errBox) errBox.style.display = 'none';
   app.editBizCoverFile = file;
+
   const reader = new FileReader();
   reader.onload = function(e) {
     const prev = document.getElementById('edit-cover-preview');
@@ -7147,18 +7510,44 @@ app.handleAdminEditBusinessSubmit = async function(event) {
   const categoryObj = (app.categories || []).find(c => c.id === categoryId);
   const cityObj = (app.cities || []).find(c => c.id === cityId);
 
-  // Subida de nuevas imágenes a R2 si fueron seleccionadas
-  let finalLogoUrl = app.editBizLogoCurrent || biz.logoUrl || '';
-  let finalCoverUrl = app.editBizCoverCurrent || biz.coverUrl || '';
+  // Subida de nuevas imágenes a R2 si fueron seleccionadas (solo URLs HTTP/HTTPS válidas)
+  let finalLogoUrl = '';
+  if (app.editBizLogoCurrent && typeof app.editBizLogoCurrent === 'string' && /^https?:\/\//i.test(app.editBizLogoCurrent)) {
+    finalLogoUrl = app.editBizLogoCurrent;
+  } else if (biz.logoUrl && typeof biz.logoUrl === 'string' && /^https?:\/\//i.test(biz.logoUrl)) {
+    finalLogoUrl = biz.logoUrl;
+  }
+
+  let finalCoverUrl = '';
+  if (app.editBizCoverCurrent && typeof app.editBizCoverCurrent === 'string' && /^https?:\/\//i.test(app.editBizCoverCurrent)) {
+    finalCoverUrl = app.editBizCoverCurrent;
+  } else if (biz.coverUrl && typeof biz.coverUrl === 'string' && /^https?:\/\//i.test(biz.coverUrl)) {
+    finalCoverUrl = biz.coverUrl;
+  }
 
   try {
-    if (btnSave) btnSave.textContent = 'Subiendo archivos...';
-
     if (app.editBizLogoFile) {
-      finalLogoUrl = await uploadFlyerToR2(app.editBizLogoFile);
+      finalLogoUrl = await uploadImageToR2(app.editBizLogoFile, {
+        label: 'Logotipo',
+        tag: 'biz_logo',
+        isLogo: true,
+        maxDimension: BIZ_LOGO_MAX_DIMENSION,
+        quality: BIZ_IMAGE_WEBP_QUALITY
+      }, (status) => {
+        if (btnSave) btnSave.textContent = status;
+      });
     }
+
     if (app.editBizCoverFile) {
-      finalCoverUrl = await uploadFlyerToR2(app.editBizCoverFile);
+      finalCoverUrl = await uploadImageToR2(app.editBizCoverFile, {
+        label: 'Portada',
+        tag: 'biz_cover',
+        isLogo: false,
+        maxDimension: BIZ_COVER_MAX_DIMENSION,
+        quality: BIZ_IMAGE_WEBP_QUALITY
+      }, (status) => {
+        if (btnSave) btnSave.textContent = status;
+      });
     }
   } catch (upErr) {
     console.error('[R2] Error al actualizar imágenes de comercio:', upErr);
@@ -7169,6 +7558,8 @@ app.handleAdminEditBusinessSubmit = async function(event) {
     if (btnSave) btnSave.textContent = originalBtnText;
     return;
   }
+
+  if (btnSave) btnSave.textContent = 'Guardando cambios en Firestore...';
 
   // Construcción del documento público (CONSERVA id, status, createdAt; EXCLUYE estrictamente datos del representante)
   const updatedBusinessData = {
