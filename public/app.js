@@ -155,6 +155,8 @@ promotionsLoaded: false,
   tempBizLogoFile: null,
   tempBizCoverFile: null,
   businesses: [],
+  businessesLoaded: false,
+  businessesLoadError: null,
   currentStatsYearMonth: null,
 
   // Propiedades del Módulo Eventos (Fase 3.0: Interfaz Pública)
@@ -4963,7 +4965,13 @@ app.initFirestoreSync = function() {
     }
   }
 
-  if (!db) return;
+  if (!db) {
+    app.businesses = [];
+    app.businessesLoaded = true;
+    app.businessesLoadError = new Error('No se pudo inicializar la conexión con Firestore.');
+    if (typeof app.renderDirectory === 'function') app.renderDirectory();
+    return;
+  }
 
   try {
     // Sincronización en tiempo real de Ciudades desde settings/cities
@@ -5110,11 +5118,21 @@ app.promotionsLoaded = true;
 
     // 5. Sincronización en tiempo real de Comercios desde la colección 'businesses'
     app.syncBusinesses = function() {
-      if (!db) return;
+      if (!db) {
+        app.businesses = [];
+        app.businessesLoaded = true;
+        app.businessesLoadError = new Error('Firestore no está disponible.');
+        app.renderDirectory();
+        if (app.isAdminLoggedIn) {
+          app.renderAdminDirectory();
+        }
+        return;
+      }
       if (app.businessesUnsubscribe) {
         try { app.businessesUnsubscribe(); } catch(e) {}
         app.businessesUnsubscribe = null;
       }
+      app.businessesLoadError = null;
       try {
         // En Firestore: los visitantes solo consultan comercios activos ('active') para cumplir con las reglas de seguridad.
         // El administrador consulta la colección completa para auditar solicitudes 'pending_approval' y 'suspended'.
@@ -5123,8 +5141,8 @@ app.promotionsLoaded = true;
           : db.collection(FIRESTORE_BUSINESSES_COLLECTION).where('status', '==', 'active');
 
         app.businessesUnsubscribe = query.onSnapshot((snapshot) => {
+          const cloudBusinesses = [];
           if (!snapshot.empty) {
-            const cloudBusinesses = [];
             snapshot.forEach((doc) => {
               const data = doc.data() || {};
               cloudBusinesses.push({
@@ -5133,22 +5151,12 @@ app.promotionsLoaded = true;
                 firestoreId: doc.id
               });
             });
-
-            let storedDeleted = [];
-            try {
-              storedDeleted = JSON.parse(localStorage.getItem('7d_deleted_businesses') || '[]');
-            } catch(e) {}
-            const isDeleted = (id) => (app.deletedBusinessIds && app.deletedBusinessIds.has(id)) || storedDeleted.includes(id);
-
-            // Unir con semillas locales para que los comercios demo aprobados en local sigan visibles si no colisionan ni fueron eliminados
-            const cloudIds = new Set(cloudBusinesses.map(b => b.id));
-            const remainingSeeds = (INITIAL_SEED_BUSINESSES || []).filter(b => !cloudIds.has(b.id) && !isDeleted(b.id));
-
-            app.businesses = [...cloudBusinesses.filter(b => !isDeleted(b.id)), ...remainingSeeds];
-            console.log('[Firestore] Comercios sincronizados desde businesses:', cloudBusinesses.length);
-          } else {
-            console.log('[Firestore] Colección businesses vacía en Firestore. Conservando catálogo base.');
           }
+
+          app.businesses = cloudBusinesses;
+          app.businessesLoaded = true;
+          app.businessesLoadError = null;
+          console.log('[Firestore] Comercios sincronizados desde businesses:', cloudBusinesses.length);
 
           app.renderDirectory();
           app.renderPromotions();
@@ -5156,9 +5164,22 @@ app.promotionsLoaded = true;
             app.renderAdminDirectory();
           }
         }, (err) => {
-          console.warn('[Firestore] Escucha de businesses (modo offline o reglas en verificación):', err.message);
+          console.error('[Firestore] Error en escucha de businesses:', err.message);
+          app.businesses = [];
+          app.businessesLoaded = true;
+          app.businessesLoadError = err || new Error('No se pudieron cargar los comercios.');
+          app.renderDirectory();
+          if (app.isAdminLoggedIn) {
+            app.renderAdminDirectory();
+          }
         });
-      } catch(e) {}
+      } catch(e) {
+        console.error('[Firestore] Error al iniciar escucha de businesses:', e.message);
+        app.businesses = [];
+        app.businessesLoaded = true;
+        app.businessesLoadError = e;
+        app.renderDirectory();
+      }
     };
 
     app.syncBusinesses();
@@ -5520,209 +5541,7 @@ const makeSvgCover = (title, bg1, bg2) => {
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 };
 
-// Semilla de comercios representativos para prueba interactiva de la interfaz
-const INITIAL_SEED_BUSINESSES = [
-  {
-    id: 'biz_roma',
-    name: 'Pizzería Napolitana Roma',
-    categoryId: 'cat_restaurantes',
-    category: 'cat_restaurantes',
-    categoryName: 'Comida & Restaurantes',
-    categoryIcon: '🍕',
-    cityId: 'city_eltigre',
-    cityName: 'El Tigre',
-    businessType: 'physical',
-    address: 'Av. Francisco de Miranda, CC Las Palmas, Local 8, El Tigre',
-    description: 'Pizzas al horno de leña con masa madre, pastas artesanales y la mejor tradición italiana en El Tigre.',
-    logoUrl: makeSvgLogo('🍕', '#991B1B', '#F43F5E'),
-    coverUrl: makeSvgCover('Pizzería Napolitana Roma • El Tigre', '#450A0A', '#831843'),
-    whatsapp: '+584141234567',
-    instagram: 'pizzeriaroma_et',
-    tiktok: 'pizzeriaroma',
-    hasDelivery: true,
-    paymentMethods: ['Pago Móvil', 'Punto de Venta', 'Efectivo', 'Zelle'],
-    schedule: {
-      weekdays: '11:00 AM - 10:00 PM',
-      saturday: '11:00 AM - 11:30 PM',
-      sunday: '12:00 PM - 09:30 PM'
-    },
-    status: 'active',
-    createdAt: '2026-10-01T12:00:00Z',
-    representative: {
-      name: 'Carlos Mendoza',
-      phone: '+584149876543',
-      email: 'carlos.mendoza@pizzeriaroma.com'
-    }
-  },
-  {
-    id: 'biz_tecnozone',
-    name: 'TecnoZone El Tigre',
-    categoryId: 'cat_tecnologia',
-    category: 'cat_tecnologia',
-    categoryName: 'Tecnología & Móviles',
-    categoryIcon: '📱',
-    cityId: 'city_eltigre',
-    cityName: 'El Tigre',
-    businessType: 'both',
-    address: 'Calle Bolívar cruce con Sucre, Edif. Torre Centro, PB',
-    description: 'Venta de smartphones, repuestos originales, accesorios de marcas premium y servicio técnico certificado.',
-    logoUrl: makeSvgLogo('📱', '#1E3A8A', '#3B82F6'),
-    coverUrl: makeSvgCover('TecnoZone • Tecnología & Smartphones', '#0F172A', '#1E40AF'),
-    whatsapp: '+584125556677',
-    instagram: 'tecnozone_eltigre',
-    tiktok: '',
-    hasDelivery: true,
-    paymentMethods: ['Pago Móvil', 'Punto de Venta', 'Zelle', 'USDT/Cripto', 'Cashea'],
-    schedule: {
-      weekdays: '08:30 AM - 05:30 PM',
-      saturday: '09:00 AM - 02:00 PM',
-      sunday: 'Cerrado'
-    },
-    status: 'active',
-    createdAt: '2026-10-02T14:30:00Z',
-    representative: {
-      name: 'Mariana Rondón',
-      phone: '+584125551122',
-      email: 'mariana.rondon@tecnozone.com'
-    }
-  },
-  {
-    id: 'biz_glamour',
-    name: 'Boutique Glamour Chic',
-    categoryId: 'cat_moda',
-    category: 'cat_moda',
-    categoryName: 'Moda & Calzado',
-    categoryIcon: '👗',
-    cityId: 'city_eltigre',
-    cityName: 'El Tigre',
-    businessType: 'virtual',
-    address: 'Tienda Online con showroom en El Tigre',
-    description: 'Tendencias en moda femenina casual y elegante, calzado exclusivo y carteras de diseño internacional.',
-    logoUrl: makeSvgLogo('👗', '#701A75', '#EC4899'),
-    coverUrl: makeSvgCover('Glamour Chic Boutique', '#4A044E', '#BE185D'),
-    whatsapp: '+584247890123',
-    instagram: 'glamourchic.moda',
-    tiktok: 'glamourchic_ve',
-    hasDelivery: true,
-    paymentMethods: ['Pago Móvil', 'Zelle', 'Transferencia'],
-    schedule: {
-      weekdays: '09:00 AM - 07:00 PM',
-      saturday: '10:00 AM - 06:00 PM',
-      sunday: '10:00 AM - 02:00 PM'
-    },
-    status: 'active',
-    createdAt: '2026-10-03T16:00:00Z',
-    representative: {
-      name: 'Valentina Soto',
-      phone: '+584247890123',
-      email: 'valentina.soto@glamourchic.com'
-    }
-  },
-  {
-    id: 'biz_repuestos_guanipa',
-    name: 'AutoRepuestos Guanipa Express',
-    categoryId: 'cat_autos',
-    category: 'cat_autos',
-    categoryName: 'Automotriz & Talleres',
-    categoryIcon: '🚗',
-    cityId: 'city_guanipa',
-    cityName: 'San José de Guanipa',
-    businessType: 'physical',
-    address: 'Av. Fernández Padilla, Galpón 4, Guanipa',
-    description: 'Todo en repuestos nacionales e importados, lubricantes de alto rendimiento, filtros y baterías.',
-    logoUrl: makeSvgLogo('🚗', '#78350F', '#F59E0B'),
-    coverUrl: makeSvgCover('AutoRepuestos Guanipa Express', '#451A03', '#B45309'),
-    whatsapp: '+584143334455',
-    instagram: 'repuestosguanipa',
-    tiktok: '',
-    hasDelivery: true,
-    paymentMethods: ['Pago Móvil', 'Punto de Venta', 'Efectivo', 'Zelle'],
-    schedule: {
-      weekdays: '08:00 AM - 05:00 PM',
-      saturday: '08:00 AM - 01:00 PM',
-      sunday: 'Cerrado'
-    },
-    status: 'active',
-    createdAt: '2026-10-04T10:15:00Z',
-    representative: {
-      name: 'Roberto Salazar',
-      phone: '+584143339900',
-      email: 'roberto@repuestosguanipa.com'
-    }
-  },
-  {
-    id: 'biz_dulceantojo',
-    name: 'Dulce Antojo Pastelería',
-    categoryId: 'cat_restaurantes',
-    category: 'cat_restaurantes',
-    categoryName: 'Comida & Restaurantes',
-    categoryIcon: '🍕',
-    cityId: 'city_santome',
-    cityName: 'San Tomé',
-    businessType: 'virtual',
-    address: 'Campo Norte, San Tomé (Solo pedidos por encargo)',
-    description: 'Postres artesanales, tortas personalizadas y mesas de dulces para toda ocasión.',
-    logoUrl: makeSvgLogo('🎂', '#831843', '#FB7185'),
-    coverUrl: makeSvgCover('Dulce Antojo Pastelería', '#500724', '#9D174D'),
-    whatsapp: '+584168889900',
-    instagram: 'dulceantojo_st',
-    tiktok: '',
-    hasDelivery: true,
-    paymentMethods: ['Pago Móvil', 'Efectivo', 'Zelle'],
-    schedule: {
-      weekdays: '08:00 AM - 06:00 PM',
-      saturday: '08:00 AM - 06:00 PM',
-      sunday: '10:00 AM - 04:00 PM'
-    },
-    status: 'pending_approval',
-    createdAt: '2026-10-05T11:45:00Z',
-    representative: {
-      name: 'Andrea Febres',
-      phone: '+584168889900',
-      email: 'andrea.febres@gmail.com'
-    }
-  },
-  {
-    id: 'biz_farmacia_sanjose',
-    name: 'Farmacia San José & Cuidado Vital',
-    categoryId: 'cat_salud',
-    category: 'cat_salud',
-    categoryName: 'Salud & Belleza',
-    categoryIcon: '✨',
-    cityId: 'city_eltigre',
-    cityName: 'El Tigre',
-    businessType: 'physical',
-    address: 'Calle 19 Sur, Edificio Colonial, El Tigre',
-    description: 'Medicamentos nacionales e importados, cuidado personal y primeros auxilios con atención profesional.',
-    logoUrl: makeSvgLogo('💊', '#065F46', '#10B981'),
-    coverUrl: makeSvgCover('Farmacia San José • Salud & Bienestar', '#064E3B', '#047857'),
-    whatsapp: '+584149998877',
-    instagram: 'farmaciasanjose_et',
-    tiktok: '',
-    hasDelivery: false,
-    paymentMethods: ['Pago Móvil', 'Punto de Venta', 'Efectivo'],
-    schedule: {
-      weekdays: '07:30 AM - 09:00 PM',
-      saturday: '08:00 AM - 08:00 PM',
-      sunday: '09:00 AM - 02:00 PM'
-    },
-    status: 'suspended',
-    createdAt: '2026-10-06T09:20:00Z',
-    representative: {
-      name: 'Dr. Leonardo Parra',
-      phone: '+584149991122',
-      email: 'leonardo.parra@salud.ve'
-    }
-  }
-];
-
-if (!app.businesses || app.businesses.length === 0) {
-  let storedDeleted = [];
-  try {
-    storedDeleted = JSON.parse(localStorage.getItem('7d_deleted_businesses') || '[]');
-  } catch(e) {}
-  app.businesses = INITIAL_SEED_BUSINESSES.filter(b => !storedDeleted.includes(b.id));
-}
+// Sin semillas ficticias locales: el directorio se alimenta exclusivamente de Firestore ('businesses').
 
 // --------------------------------------------------------------------------
 // 1. Barra de navegación inferior fija (5 accesos: Eventos, Ofertas, Directorio, Registrar, Publicar)
@@ -5904,6 +5723,33 @@ app.renderDirectory = function() {
   const grid = document.getElementById('directory-grid');
   const emptyState = document.getElementById('directory-empty-state');
   if (!grid) return;
+
+  if (app.businessesLoadError) {
+    if (emptyState) emptyState.style.display = 'none';
+    grid.style.display = 'block';
+    grid.innerHTML = `
+      <div class="directory-empty-state" style="display: block;">
+        <div class="empty-icon">⚠️</div>
+        <h3>Error al cargar los comercios</h3>
+        <p>No se pudo conectar con la base de datos en este momento. Verifica tu conexión e inténtalo de nuevo.</p>
+        <button type="button" class="btn btn-primary" onclick="app.syncBusinesses()">Reintentar</button>
+      </div>
+    `;
+    return;
+  }
+
+  if (!app.businessesLoaded && (!app.businesses || app.businesses.length === 0)) {
+    if (emptyState) emptyState.style.display = 'none';
+    grid.style.display = 'block';
+    grid.innerHTML = `
+      <div class="directory-empty-state" style="display: block;">
+        <div class="empty-icon">⏳</div>
+        <h3>Cargando comercios...</h3>
+        <p>Consultando el directorio comercial en tiempo real.</p>
+      </div>
+    `;
+    return;
+  }
 
   if (filtered.length === 0) {
     grid.innerHTML = '';
