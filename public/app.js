@@ -7250,10 +7250,19 @@ app.openAdminEditBusinessModal = function(bizId) {
   const waInput = document.getElementById('edit-biz-whatsapp');
   const igInput = document.getElementById('edit-biz-instagram');
   const ttInput = document.getElementById('edit-biz-tiktok');
-  const schedW = document.getElementById('edit-biz-sched-weekdays');
-  const schedSat = document.getElementById('edit-biz-sched-saturday');
-  const schedSun = document.getElementById('edit-biz-sched-sunday');
+  const schedW = document.getElementById('edit-sched-weekdays');
+  const schedSat = document.getElementById('edit-sched-saturday');
+  const schedSun = document.getElementById('edit-sched-sunday');
   const errBox = document.getElementById('edit-biz-error');
+  const btnSave = document.getElementById('btn-save-edit-business');
+  if (btnSave) {
+    btnSave.disabled = false;
+    btnSave.textContent = '💾 Guardar Cambios';
+  }
+  const logoInput = document.getElementById('edit-biz-logo-input');
+  if (logoInput) logoInput.value = '';
+  const coverInput = document.getElementById('edit-biz-cover-input');
+  if (coverInput) coverInput.value = '';
 
   if (idInput) idInput.value = biz.id;
   if (nameInput) nameInput.value = biz.name || '';
@@ -7465,163 +7474,209 @@ app.removeEditCover = function() {
 };
 
 app.handleAdminEditBusinessSubmit = async function(event) {
-  event.preventDefault();
-  const bizId = (document.getElementById('edit-biz-id') || {}).value;
-  const biz = (app.businesses || []).find(b => b.id === bizId);
-  if (!biz) {
-    alert('No se encontró el comercio a editar.');
-    return;
+  if (event && typeof event.preventDefault === 'function') {
+    event.preventDefault();
   }
 
   const errBox = document.getElementById('edit-biz-error');
   if (errBox) errBox.style.display = 'none';
 
   const btnSave = document.getElementById('btn-save-edit-business');
-  const originalBtnText = btnSave ? btnSave.textContent : 'Guardar Cambios';
+  const originalBtnText = (btnSave && btnSave.textContent) ? btnSave.textContent : '💾 Guardar Cambios';
 
-  const name = (document.getElementById('edit-biz-name') || {}).value.trim();
-  const categoryId = (document.getElementById('edit-biz-category') || {}).value;
-  const cityId = (document.getElementById('edit-biz-city') || {}).value;
-  const bizTypeInput = document.querySelector('input[name="edit-biz-type"]:checked');
-  const businessType = bizTypeInput ? bizTypeInput.value : 'physical';
-  const address = (document.getElementById('edit-biz-address') || {}).value.trim();
-  const description = (document.getElementById('edit-biz-description') || {}).value.trim();
-  const whatsapp = (document.getElementById('edit-biz-whatsapp') || {}).value.trim();
-  const instagram = (document.getElementById('edit-biz-instagram') || {}).value.trim();
-  const tiktok = (document.getElementById('edit-biz-tiktok') || {}).value.trim();
-  const deliveryInput = document.querySelector('input[name="edit-biz-delivery"]:checked');
-  const hasDelivery = deliveryInput ? deliveryInput.value === 'yes' : true;
-
-  const paymentBoxes = document.querySelectorAll('input[name="edit-payment-method"]:checked');
-  const paymentMethods = Array.from(paymentBoxes).map(b => b.value);
-
-  const schedWeekdays = (document.getElementById('edit-biz-sched-weekdays') || {}).value.trim();
-  const schedSaturday = (document.getElementById('edit-biz-sched-saturday') || {}).value.trim();
-  const schedSunday = (document.getElementById('edit-biz-sched-sunday') || {}).value.trim();
-
-  if (!name) {
-    if (errBox) {
-      errBox.textContent = 'El nombre comercial es obligatorio.';
-      errBox.style.display = 'block';
+  const resetSaveBtn = () => {
+    if (btnSave) {
+      btnSave.disabled = false;
+      btnSave.textContent = originalBtnText;
     }
-    return;
-  }
-
-  const categoryObj = (app.categories || []).find(c => c.id === categoryId);
-  const cityObj = (app.cities || []).find(c => c.id === cityId);
-
-  // Subida de nuevas imágenes a R2 si fueron seleccionadas (solo URLs HTTP/HTTPS válidas)
-  let finalLogoUrl = '';
-  if (app.editBizLogoCurrent && typeof app.editBizLogoCurrent === 'string' && /^https?:\/\//i.test(app.editBizLogoCurrent)) {
-    finalLogoUrl = app.editBizLogoCurrent;
-  } else if (biz.logoUrl && typeof biz.logoUrl === 'string' && /^https?:\/\//i.test(biz.logoUrl)) {
-    finalLogoUrl = biz.logoUrl;
-  }
-
-  let finalCoverUrl = '';
-  if (app.editBizCoverCurrent && typeof app.editBizCoverCurrent === 'string' && /^https?:\/\//i.test(app.editBizCoverCurrent)) {
-    finalCoverUrl = app.editBizCoverCurrent;
-  } else if (biz.coverUrl && typeof biz.coverUrl === 'string' && /^https?:\/\//i.test(biz.coverUrl)) {
-    finalCoverUrl = biz.coverUrl;
-  }
-
-  try {
-    if (app.editBizLogoFile) {
-      finalLogoUrl = await uploadImageToR2(app.editBizLogoFile, {
-        label: 'Logotipo',
-        tag: 'biz_logo',
-        isLogo: true,
-        maxDimension: BIZ_LOGO_MAX_DIMENSION,
-        quality: BIZ_IMAGE_WEBP_QUALITY
-      }, (status) => {
-        if (btnSave) btnSave.textContent = status;
-      });
-    }
-
-    if (app.editBizCoverFile) {
-      finalCoverUrl = await uploadImageToR2(app.editBizCoverFile, {
-        label: 'Portada',
-        tag: 'biz_cover',
-        isLogo: false,
-        maxDimension: BIZ_COVER_MAX_DIMENSION,
-        quality: BIZ_IMAGE_WEBP_QUALITY
-      }, (status) => {
-        if (btnSave) btnSave.textContent = status;
-      });
-    }
-  } catch (upErr) {
-    console.error('[R2] Error al actualizar imágenes de comercio:', upErr);
-    if (errBox) {
-      errBox.textContent = 'Error al subir imágenes: ' + (upErr.message || 'Error de conexión.');
-      errBox.style.display = 'block';
-    }
-    if (btnSave) btnSave.textContent = originalBtnText;
-    return;
-  }
-
-  if (btnSave) btnSave.textContent = 'Guardando cambios en Firestore...';
-
-  // Construcción del documento público (CONSERVA id, status, createdAt; EXCLUYE estrictamente datos del representante)
-  const updatedBusinessData = {
-    id: biz.id,
-    name,
-    categoryId,
-    category: categoryId,
-    categoryName: categoryObj ? categoryObj.name : (biz.categoryName || 'Comercio'),
-    categoryIcon: categoryObj ? categoryObj.icon : (biz.categoryIcon || '🏪'),
-    cityId,
-    cityName: cityObj ? cityObj.name : (biz.cityName || 'Venezuela'),
-    businessType,
-    address,
-    description,
-    logoUrl: finalLogoUrl,
-    coverUrl: finalCoverUrl,
-    whatsapp,
-    instagram,
-    tiktok,
-    hasDelivery,
-    paymentMethods,
-    schedule: {
-      weekdays: schedWeekdays || '08:00 AM - 06:00 PM',
-      saturday: schedSaturday || '09:00 AM - 02:00 PM',
-      sunday: schedSunday || 'Cerrado'
-    },
-    status: biz.status, // CONSERVA ESTRICTAMENTE EL ESTADO ACTUAL (no altera aprobación)
-    createdAt: biz.createdAt || Date.now()
   };
 
-  if (btnSave) btnSave.textContent = 'Guardando cambios en Firestore...';
+  const showEditError = (msg) => {
+    resetSaveBtn();
+    if (errBox) {
+      errBox.textContent = msg;
+      errBox.style.display = 'block';
+    } else if (typeof app.showToast === 'function') {
+      app.showToast('❌ ' + msg);
+    }
+  };
 
   try {
-    if (db) {
-      await db.collection(FIRESTORE_BUSINESSES_COLLECTION).doc(biz.id).set(updatedBusinessData, { merge: true });
-      console.log('[Firestore] Comercio actualizado en businesses:', biz.id);
+    const bizIdEl = document.getElementById('edit-biz-id');
+    const bizId = bizIdEl && typeof bizIdEl.value === 'string' ? bizIdEl.value : '';
+    const biz = (app.businesses || []).find(b => b.id === bizId || b.firestoreId === bizId);
+    if (!biz) {
+      showEditError('No se encontró el comercio a editar.');
+      return;
     }
-  } catch (dbErr) {
-    console.error('[Firestore] Error al actualizar comercio:', dbErr);
-    if (errBox) {
-      errBox.textContent = 'Error al guardar en la base de datos: ' + (dbErr.message || 'Fallo de permisos.');
-      errBox.style.display = 'block';
-    }
-    if (btnSave) btnSave.textContent = originalBtnText;
-    return;
-  }
 
-  // Actualización en memoria local preservando los datos del representante si existían
-  const idx = (app.businesses || []).findIndex(b => b.id === biz.id);
-  if (idx !== -1) {
-    const existingRep = app.businesses[idx].representative;
-    app.businesses[idx] = {
-      ...updatedBusinessData,
-      representative: existingRep
+    const getInputValue = (id) => {
+      const el = document.getElementById(id);
+      return (el && typeof el.value === 'string') ? el.value.trim() : '';
     };
-  }
 
-  if (btnSave) btnSave.textContent = originalBtnText;
-  app.closeAdminEditBusinessModal();
-  app.renderAdminDirectory();
-  app.renderDirectory();
-  app.showToast(`✅ Comercio "${updatedBusinessData.name}" actualizado exitosamente.`);
+    const name = getInputValue('edit-biz-name');
+    const categoryId = getInputValue('edit-biz-category') || biz.categoryId || biz.category || '';
+    const cityId = getInputValue('edit-biz-city') || biz.cityId || '';
+    const bizTypeInput = document.querySelector('input[name="edit-biz-type"]:checked');
+    const businessType = bizTypeInput ? bizTypeInput.value : (biz.businessType || 'physical');
+    const address = getInputValue('edit-biz-address');
+    const description = getInputValue('edit-biz-description');
+    const whatsapp = getInputValue('edit-biz-whatsapp');
+    const instagram = getInputValue('edit-biz-instagram');
+    const tiktok = getInputValue('edit-biz-tiktok');
+    const deliveryInput = document.querySelector('input[name="edit-biz-delivery"]:checked');
+    const hasDelivery = deliveryInput ? deliveryInput.value === 'yes' : Boolean(biz.hasDelivery);
+
+    const paymentBoxes = document.querySelectorAll('input[name="edit-payment-method"]:checked') || [];
+    const paymentMethods = Array.from(paymentBoxes).map(b => b.value);
+
+    const schedWeekdays = getInputValue('edit-sched-weekdays');
+    const schedSaturday = getInputValue('edit-sched-saturday');
+    const schedSunday = getInputValue('edit-sched-sunday');
+
+    if (!name) {
+      showEditError('El nombre comercial es obligatorio.');
+      return;
+    }
+
+    if (!categoryId || !cityId) {
+      showEditError('La categoría y la ciudad comercial son obligatorias.');
+      return;
+    }
+
+    if (typeof db === 'undefined' || !db || typeof db.collection !== 'function') {
+      showEditError('Error: La conexión con Firestore no está inicializada. Recarga la página e inténtalo nuevamente.');
+      return;
+    }
+
+    const categoryObj = (app.categories || []).find(c => c.id === categoryId);
+    const cityObj = (app.cities || []).find(c => c.id === cityId);
+
+    if (btnSave) {
+      btnSave.disabled = true;
+      btnSave.textContent = 'Procesando cambios...';
+    }
+
+    // Subida de nuevas imágenes a R2 si fueron seleccionadas (solo URLs HTTP/HTTPS válidas)
+    let finalLogoUrl = '';
+    if (app.editBizLogoCurrent && typeof app.editBizLogoCurrent === 'string' && /^https?:\/\//i.test(app.editBizLogoCurrent)) {
+      finalLogoUrl = app.editBizLogoCurrent;
+    } else if (biz.logoUrl && typeof biz.logoUrl === 'string' && /^https?:\/\//i.test(biz.logoUrl)) {
+      finalLogoUrl = biz.logoUrl;
+    }
+
+    let finalCoverUrl = '';
+    if (app.editBizCoverCurrent && typeof app.editBizCoverCurrent === 'string' && /^https?:\/\//i.test(app.editBizCoverCurrent)) {
+      finalCoverUrl = app.editBizCoverCurrent;
+    } else if (biz.coverUrl && typeof biz.coverUrl === 'string' && /^https?:\/\//i.test(biz.coverUrl)) {
+      finalCoverUrl = biz.coverUrl;
+    }
+
+    try {
+      if (app.editBizLogoFile) {
+        finalLogoUrl = await uploadImageToR2(app.editBizLogoFile, {
+          label: 'Logotipo',
+          tag: 'biz_logo',
+          isLogo: true,
+          maxDimension: BIZ_LOGO_MAX_DIMENSION,
+          quality: BIZ_IMAGE_WEBP_QUALITY
+        }, (status) => {
+          if (btnSave) btnSave.textContent = status;
+        });
+      }
+
+      if (app.editBizCoverFile) {
+        finalCoverUrl = await uploadImageToR2(app.editBizCoverFile, {
+          label: 'Portada',
+          tag: 'biz_cover',
+          isLogo: false,
+          maxDimension: BIZ_COVER_MAX_DIMENSION,
+          quality: BIZ_IMAGE_WEBP_QUALITY
+        }, (status) => {
+          if (btnSave) btnSave.textContent = status;
+        });
+      }
+    } catch (upErr) {
+      console.error('[R2] Error al actualizar imágenes de comercio:', upErr);
+      showEditError('Error al subir imágenes: ' + (upErr.message || 'Error de conexión.'));
+      return;
+    }
+
+    // Protección adicional contra Data URLs, Base64 o SVG antes de persistir
+    if (finalLogoUrl && !/^https?:\/\//i.test(finalLogoUrl)) {
+      finalLogoUrl = '';
+    }
+    if (finalCoverUrl && !/^https?:\/\//i.test(finalCoverUrl)) {
+      finalCoverUrl = '';
+    }
+
+    if (btnSave) btnSave.textContent = 'Guardando cambios en Firestore...';
+
+    const targetDocId = biz.firestoreId || biz.id;
+
+    // Construcción del documento público (CONSERVA id, status, createdAt; EXCLUYE estrictamente datos del representante)
+    const updatedBusinessData = {
+      id: targetDocId,
+      name,
+      categoryId,
+      category: categoryId,
+      categoryName: categoryObj ? categoryObj.name : (biz.categoryName || 'Comercio'),
+      categoryIcon: categoryObj ? categoryObj.icon : (biz.categoryIcon || '🏪'),
+      cityId,
+      cityName: cityObj ? cityObj.name : (biz.cityName || 'Venezuela'),
+      businessType,
+      address,
+      description,
+      logoUrl: finalLogoUrl,
+      coverUrl: finalCoverUrl,
+      whatsapp,
+      instagram,
+      tiktok,
+      hasDelivery,
+      paymentMethods,
+      schedule: {
+        weekdays: schedWeekdays || '08:00 AM - 06:00 PM',
+        saturday: schedSaturday || '09:00 AM - 02:00 PM',
+        sunday: schedSunday || 'Cerrado'
+      },
+      status: biz.status, // CONSERVA ESTRICTAMENTE EL ESTADO ACTUAL (no altera aprobación)
+      createdAt: biz.createdAt || Date.now()
+    };
+
+    try {
+      await db.collection(FIRESTORE_BUSINESSES_COLLECTION).doc(targetDocId).set(updatedBusinessData, { merge: true });
+      console.log('[Firestore] Comercio actualizado en businesses:', targetDocId);
+    } catch (dbErr) {
+      console.error('[Firestore] Error al actualizar comercio:', dbErr);
+      showEditError('Error al guardar en la base de datos: ' + (dbErr.message || 'Fallo de permisos o conexión.'));
+      return;
+    }
+
+    // Actualización en memoria local preservando campos no modificados y datos del representante si existían
+    const idx = (app.businesses || []).findIndex(b => b.id === biz.id || b.firestoreId === targetDocId);
+    if (idx !== -1) {
+      app.businesses[idx] = {
+        ...app.businesses[idx],
+        ...updatedBusinessData,
+        id: targetDocId,
+        firestoreId: targetDocId
+      };
+    }
+
+    app.editBizLogoFile = null;
+    app.editBizCoverFile = null;
+
+    app.closeAdminEditBusinessModal();
+    app.renderAdminDirectory();
+    app.renderDirectory();
+    app.showToast(`✅ Comercio "${updatedBusinessData.name}" actualizado exitosamente.`);
+  } catch (unexpectedErr) {
+    console.error('[AdminEdit] Error inesperado al guardar comercio:', unexpectedErr);
+    showEditError('Error inesperado al guardar los cambios: ' + (unexpectedErr.message || 'Inténtalo nuevamente.'));
+  } finally {
+    resetSaveBtn();
+  }
 };
 
 // ==========================================================================
